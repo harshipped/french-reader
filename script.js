@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- APP STATE ---
     let currentSelectedWordSpan = null;
+    let currentAudioUrl = null;
 
     // --- CORE FUNCTIONS ---
 
@@ -53,11 +54,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Fetches word definition by calling our own serverless function.
+     * Fetches word definition from the enhanced serverless function.
      * @param {string} word - The word to look up.
      */
     async function showWordDetails(word) {
-        const cleanedWord = word.toLowerCase().replace(/[.,«»"';:()]/g, '').trim();
+        const cleanedWord = word.toLowerCase().replace(/[.,«»"';:()!?]/g, '').trim();
         if (!cleanedWord) return;
         
         // Reset the UI
@@ -65,8 +66,8 @@ document.addEventListener('DOMContentLoaded', () => {
         wordDetails.classList.add('hidden');
         loaderPlaceholder.classList.remove('hidden');
 
-        // Call the Netlify function
-        const endpoint = `/api/fetch-definition?word=${cleanedWord}`;
+        // Call the enhanced Netlify function
+        const endpoint = `/api/fetch-definition?word=${encodeURIComponent(cleanedWord)}`;
 
         try {
             const response = await fetch(endpoint);
@@ -78,27 +79,54 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             // --- Handle the successful response ---
-            // The data structure now matches the format returned by our corrected index.js
-            selectedWordEl.textContent = data.results[0].word;
-            wordPhoneticEl.textContent = ''; // Our local dict doesn't have phonetic data
+            const result = data.results[0];
+            selectedWordEl.textContent = result.word;
+            
+            // Display phonetic if available
+            if (result.phonetic) {
+                wordPhoneticEl.textContent = result.phonetic;
+                wordPhoneticEl.style.display = 'block';
+            } else {
+                wordPhoneticEl.style.display = 'none';
+            }
 
-            // Hide the pronounce button since we don't have audio
-            pronounceBtn.style.display = 'none';
+            // Store audio URL for pronunciation
+            currentAudioUrl = result.audio;
+            
+            // Show/hide pronounce button based on audio availability
+            if (currentAudioUrl || 'speechSynthesis' in window) {
+                pronounceBtn.style.display = 'block';
+                // Update button title based on audio source
+                if (currentAudioUrl) {
+                    pronounceBtn.title = 'Play audio pronunciation';
+                } else {
+                    pronounceBtn.title = 'Text-to-speech pronunciation';
+                }
+            } else {
+                pronounceBtn.style.display = 'none';
+            }
 
             // Clear previous definitions
             definitionsContainer.innerHTML = '';
 
-            // Add the definition from our local dictionary
-            const definition = data.results[0].lexicalEntries[0].entries[0].senses[0].definitions[0];
-            const example = data.results[0].lexicalEntries[0].entries[0].senses[0].examples[0]?.text || 'No example available.';
+            // Add the definition
+            const senses = result.lexicalEntries[0].entries[0].senses;
+            senses.forEach((sense, index) => {
+                const definition = sense.definitions[0];
+                const example = sense.examples && sense.examples[0] ? sense.examples[0].text : 'No example available.';
 
-            const defBlock = document.createElement('div');
-            defBlock.innerHTML = `
-                <h3 class="font-semibold text-slate-600 mb-1">noun</h3> <!-- A generic fallback -->
-                <p class="bg-white p-3 rounded-lg border border-slate-200">${definition}</p>
-                <p class="text-slate-500 text-sm mt-2 italic">e.g., "${example}"</p>
-            `;
-            definitionsContainer.appendChild(defBlock);
+                const defBlock = document.createElement('div');
+                defBlock.className = 'mb-4';
+                defBlock.innerHTML = `
+                    <h3 class="font-semibold text-slate-600 mb-2">Definition ${index + 1}</h3>
+                    <p class="bg-white p-4 rounded-lg border border-slate-200 mb-2">${definition}</p>
+                    <div class="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-400">
+                        <p class="text-slate-700 text-sm"><strong>Example:</strong></p>
+                        <p class="text-slate-600 italic">"${example}"</p>
+                    </div>
+                `;
+                definitionsContainer.appendChild(defBlock);
+            });
 
             // Show the word details
             wordDetails.classList.remove('hidden');
@@ -106,9 +134,23 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             // --- Handle errors (404, network issues, etc.) ---
             console.error("Fetch Error:", error);
+            
+            let errorMessage = `No definition found for "${cleanedWord}".`;
+            let suggestion = 'The word may not be in the dictionary, or it could be a conjugated form.';
+            
+            if (error.message.includes('HTTP 404')) {
+                suggestion = 'Try checking the spelling or try a different word form.';
+            } else if (error.message.includes('Failed to fetch')) {
+                errorMessage = 'Network error occurred.';
+                suggestion = 'Please check your internet connection and try again.';
+            }
+            
             toolPlaceholder.innerHTML = `
-                <p class="font-medium text-red-500">No definition found for "${cleanedWord}".</p>
-                <p class="text-sm text-slate-400 mt-2">The word may not be in the dictionary, or it could be a conjugated form.</p>`;
+                <div class="text-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-red-400"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    <p class="font-medium text-red-500 mb-2">${errorMessage}</p>
+                    <p class="text-sm text-slate-400">${suggestion}</p>
+                </div>`;
             toolPlaceholder.style.display = 'block';
         } finally {
             // Always hide the loader
@@ -117,19 +159,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Plays the audio for the current word.
-     * This is a fallback using the browser's speech synthesis.
+     * Plays the audio for the current word using the best available method.
      */
     function pronounceWord() {
         const wordToPronounce = selectedWordEl.textContent;
+        
+        if (currentAudioUrl) {
+            // Use real audio file if available
+            try {
+                const audio = new Audio(currentAudioUrl);
+                audio.play().catch(error => {
+                    console.error('Audio playback failed:', error);
+                    // Fallback to speech synthesis
+                    useSpeechSynthesis(wordToPronounce);
+                });
+            } catch (error) {
+                console.error('Audio creation failed:', error);
+                useSpeechSynthesis(wordToPronounce);
+            }
+        } else {
+            // Use browser's speech synthesis as fallback
+            useSpeechSynthesis(wordToPronounce);
+        }
+    }
+
+    /**
+     * Uses browser's speech synthesis to pronounce a word.
+     * @param {string} word - The word to pronounce
+     */
+    function useSpeechSynthesis(word) {
         if ('speechSynthesis' in window) {
-            const utterance = new SpeechSynthesisUtterance(wordToPronounce);
+            // Cancel any ongoing speech
+            window.speechSynthesis.cancel();
+            
+            const utterance = new SpeechSynthesisUtterance(word);
             utterance.lang = 'fr-FR'; // Set language to French
             utterance.rate = 0.8; // Slightly slower for clarity
+            utterance.volume = 0.8;
+            
+            // Try to use a French voice if available
+            const voices = window.speechSynthesis.getVoices();
+            const frenchVoice = voices.find(voice => voice.lang.startsWith('fr'));
+            if (frenchVoice) {
+                utterance.voice = frenchVoice;
+            }
+            
             window.speechSynthesis.speak(utterance);
         } else {
             console.error("Speech Synthesis not supported in this browser.");
+            alert("Audio pronunciation not supported in this browser.");
         }
+    }
+
+    // Load voices when they become available
+    if ('speechSynthesis' in window) {
+        speechSynthesis.onvoiceschanged = function() {
+            // Voices are now loaded
+            console.log('Speech synthesis voices loaded:', speechSynthesis.getVoices().length);
+        };
     }
 
     // --- EVENT LISTENERS ---
