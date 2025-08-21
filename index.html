@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Le Lecteur Français | French Reading Assistant</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0;600;1,400&display=swap" rel="stylesheet">
+    
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- PDF.js and Mammoth.js for file reading -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.18/mammoth.browser.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased">
+
+    <div class="flex flex-col md:flex-row h-screen">
+
+        <!-- Main Content: Reading Pane -->
+        <main class="flex-1 flex flex-col bg-white shadow-md md:rounded-r-2xl">
+            <header class="p-4 border-b border-slate-200 flex justify-between items-center">
+                <h1 id="document-title" class="text-xl font-bold text-slate-700 truncate pr-4">Le Lecteur Français</h1>
+                <label for="file-upload" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg cursor-pointer transition-colors duration-200 whitespace-nowrap">
+                    Upload Document
+                </label>
+                <input id="file-upload" type="file" class="hidden" accept=".txt,.pdf,.docx">
+            </header>
+            
+            <div id="reading-pane" class="reading-pane p-6 md:p-10 text-lg overflow-y-auto flex-1">
+                <div id="placeholder-text" class="text-slate-400 text-center mt-20">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><polyline points="14 2 14 8 20 8"/><path d="M2 15h10"/><path d="M2 19h10"/></svg>
+                    <h2 class="text-2xl font-semibold mb-2">Welcome!</h2>
+                    <p>Upload a .txt, .pdf, or .docx file to begin.</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Sidebar: Dictionary and Tools -->
+        <aside id="sidebar" class="w-full md:w-96 bg-slate-50 border-l border-slate-200 flex flex-col p-6 transition-transform duration-300">
+            <div id="tool-placeholder" class="text-center text-slate-500 my-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
+                <p class="font-medium">Click on a word in the text to see its definition.</p>
+            </div>
+
+            <div id="loader-placeholder" class="hidden text-center text-slate-500 my-auto">
+                <div class="loader mx-auto"></div>
+                <p class="mt-4 font-medium">Looking up word...</p>
+            </div>
+            
+            <div id="word-details" class="hidden flex-1 flex flex-col overflow-y-auto">
+                <div class="mb-6 pb-4 border-b">
+                    <div class="flex items-center justify-between">
+                        <h2 id="selected-word" class="text-4xl font-bold text-blue-600">Mot</h2>
+                        <button id="pronounce-btn" class="p-3 rounded-full hover:bg-slate-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                        </button>
+                    </div>
+                    <p id="word-phonetic" class="text-slate-500 font-medium text-lg">/mo/</p>
+                </div>
+                <div id="definitions-container" class="flex flex-col gap-y-6">
+                    <!-- Definition blocks will be injected here -->
+                </div>
+            </div>
+        </aside>
+
+    </div>
+    
+    <!-- Your Custom JavaScript -->
+    <script src="script.js"></script>
+</body>
+</html>
