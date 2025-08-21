@@ -33,7 +33,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Processes raw text and injects it into the reading pane.
+     * Creates a clickable word element
+     * @param {string} word - The word text
+     * @returns {HTMLElement} - The clickable span element
+     */
+    function createWordSpan(word) {
+        const span = document.createElement('span');
+        span.textContent = word;
+        span.className = 'word';
+        return span;
+    }
+
+    /**
+     * Processes text while preserving basic formatting (paragraphs, line breaks)
+     * @param {string} text - The text to process.
+     */
+    function loadTextWithFormatting(text) {
+        placeholderText.style.display = 'none';
+        readingPane.innerHTML = '';
+        
+        // Split text into paragraphs
+        const paragraphs = text.split(/\n\s*\n/);
+        
+        paragraphs.forEach((paragraph, index) => {
+            if (paragraph.trim().length === 0) return;
+            
+            // Create paragraph element
+            const p = document.createElement('p');
+            p.className = 'mb-4 text-justify';
+            
+            // Split paragraph into lines
+            const lines = paragraph.split(/\n/);
+            
+            lines.forEach((line, lineIndex) => {
+                if (lineIndex > 0) {
+                    p.appendChild(document.createElement('br'));
+                }
+                
+                // Split line into words and spaces
+                const parts = line.split(/(\s+)/);
+                
+                parts.forEach(part => {
+                    if (part.trim().length > 0) {
+                        // It's a word
+                        p.appendChild(createWordSpan(part));
+                    } else {
+                        // It's whitespace
+                        p.appendChild(document.createTextNode(part));
+                    }
+                });
+            });
+            
+            readingPane.appendChild(p);
+        });
+        
+        resetReader();
+    }
+
+    /**
+     * Simple text processing (fallback for plain text)
      * @param {string} text - The text to process.
      */
     function loadText(text) {
@@ -42,15 +100,91 @@ document.addEventListener('DOMContentLoaded', () => {
         const words = text.split(/(\s+)/);
         words.forEach(word => {
             if (word.trim().length > 0) {
-                const span = document.createElement('span');
-                span.textContent = word;
-                span.className = 'word';
-                readingPane.appendChild(span);
+                readingPane.appendChild(createWordSpan(word));
             } else {
                 readingPane.appendChild(document.createTextNode(word));
             }
         });
         resetReader();
+    }
+
+    /**
+     * Shows the paste text modal
+     */
+    function showPasteModal() {
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+        
+        // Create modal content
+        const modal = document.createElement('div');
+        modal.className = 'bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col';
+        
+        modal.innerHTML = `
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-800">Paste French Text</h2>
+                <p class="text-sm text-gray-600 mt-1">Paste your French text below and click "Load Text" to start reading.</p>
+            </div>
+            <div class="flex-1 p-6">
+                <textarea 
+                    id="paste-textarea" 
+                    class="w-full h-64 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Paste your French text here..."
+                    style="font-family: 'Lora', serif; line-height: 1.6;"
+                ></textarea>
+            </div>
+            <div class="p-6 border-t border-gray-200 flex justify-end space-x-3">
+                <button id="cancel-paste" class="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">
+                    Cancel
+                </button>
+                <button id="load-paste" class="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors">
+                    Load Text
+                </button>
+            </div>
+        `;
+        
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        
+        const textarea = document.getElementById('paste-textarea');
+        const cancelBtn = document.getElementById('cancel-paste');
+        const loadBtn = document.getElementById('load-paste');
+        
+        // Focus the textarea
+        textarea.focus();
+        
+        // Handle cancel
+        function closeModal() {
+            document.body.removeChild(overlay);
+        }
+        
+        cancelBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal();
+        });
+        
+        // Handle load text
+        loadBtn.addEventListener('click', () => {
+            const text = textarea.value.trim();
+            if (text) {
+                documentTitle.textContent = 'Pasted Text';
+                loadTextWithFormatting(text);
+                closeModal();
+            } else {
+                textarea.focus();
+                textarea.style.borderColor = '#ef4444';
+                setTimeout(() => {
+                    textarea.style.borderColor = '';
+                }, 2000);
+            }
+        });
+        
+        // Handle Ctrl+Enter to load
+        textarea.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                loadBtn.click();
+            }
+        });
     }
 
     /**
@@ -109,21 +243,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Clear previous definitions
             definitionsContainer.innerHTML = '';
 
-            // Add the definition
+            // Add the definition (WITHOUT EXAMPLES)
             const senses = result.lexicalEntries[0].entries[0].senses;
             senses.forEach((sense, index) => {
                 const definition = sense.definitions[0];
-                const example = sense.examples && sense.examples[0] ? sense.examples[0].text : 'No example available.';
 
                 const defBlock = document.createElement('div');
                 defBlock.className = 'mb-4';
                 defBlock.innerHTML = `
                     <h3 class="font-semibold text-slate-600 mb-2">Definition ${index + 1}</h3>
-                    <p class="bg-white p-4 rounded-lg border border-slate-200 mb-2">${definition}</p>
-                    <div class="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-400">
-                        <p class="text-slate-700 text-sm"><strong>Example:</strong></p>
-                        <p class="text-slate-600 italic">"${example}"</p>
-                    </div>
+                    <p class="bg-white p-4 rounded-lg border border-slate-200">${definition}</p>
                 `;
                 definitionsContainer.appendChild(defBlock);
             });
@@ -254,7 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileExtension = file.name.split('.').pop().toLowerCase();
 
         if (fileExtension === 'txt') {
-            reader.onload = (event) => loadText(event.target.result);
+            reader.onload = (event) => loadTextWithFormatting(event.target.result);
             reader.readAsText(file);
         } else if (fileExtension === 'pdf') {
             pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
@@ -271,9 +400,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             textContent.items.forEach(item => {
                                 fullText += item.str + ' ';
                             });
-                            fullText += '\n';
+                            fullText += '\n\n'; // Add paragraph breaks between pages
                         });
-                        loadText(fullText);
+                        loadTextWithFormatting(fullText);
                     });
                 }).catch(err => {
                     console.error("Error loading PDF:", err);
@@ -284,7 +413,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (fileExtension === 'docx') {
             reader.onload = (event) => {
                 mammoth.extractRawText({ arrayBuffer: event.target.result })
-                    .then(result => loadText(result.value))
+                    .then(result => loadTextWithFormatting(result.value))
                     .catch(err => {
                         console.error("Error reading .docx file:", err);
                         readingPane.innerHTML = `<p class="text-red-500 text-center">Error: Could not read the .docx file.</p>`;
@@ -293,6 +422,21 @@ document.addEventListener('DOMContentLoaded', () => {
             reader.readAsArrayBuffer(file);
         } else {
             readingPane.innerHTML = `<p class="text-red-500 text-center">Error: Unsupported file type. Please upload a .txt, .pdf, or .docx file.</p>`;
+        }
+    });
+
+    // Add keyboard shortcut for paste (Ctrl+V or Cmd+V)
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.target.matches('input, textarea')) {
+            e.preventDefault();
+            showPasteModal();
+        }
+    });
+
+    // Add click handler for paste button (we'll add this to the HTML)
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'paste-text-btn') {
+            showPasteModal();
         }
     });
 });
