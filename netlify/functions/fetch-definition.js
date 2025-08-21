@@ -1,23 +1,74 @@
 // netlify/functions/fetch-definition.js
-// This function reads from a local JSON dictionary file
+// Debug version with better error handling
 
 const fs = require('fs');
 const path = require('path');
 
-// The dictionary.json should be in the same directory as this function
-const dictionaryPath = path.resolve(__dirname, 'dictionary.json');
+let dictionary = [];
+let loadError = null;
 
-let dictionary;
-try {
-  dictionary = JSON.parse(fs.readFileSync(dictionaryPath, 'utf8'));
-  console.log(`Dictionary loaded with ${dictionary.length} entries`);
-} catch (error) {
-  console.error('Error loading dictionary:', error);
-  dictionary = [];
+// Try multiple possible paths for the dictionary
+const possiblePaths = [
+  path.resolve(__dirname, 'dictionary.json'),           // Same directory
+  path.resolve(__dirname, '../dictionary.json'),       // Parent directory
+  path.resolve(__dirname, '../../dictionary.json'),    // Project root
+  path.resolve(process.cwd(), 'dictionary.json'),      // Process working directory
+  path.resolve(process.cwd(), 'netlify/functions/dictionary.json')
+];
+
+for (const dictPath of possiblePaths) {
+  try {
+    if (fs.existsSync(dictPath)) {
+      const fileContent = fs.readFileSync(dictPath, 'utf8');
+      dictionary = JSON.parse(fileContent);
+      console.log(`Dictionary loaded successfully from: ${dictPath}`);
+      console.log(`Dictionary has ${dictionary.length} entries`);
+      break;
+    } else {
+      console.log(`Dictionary not found at: ${dictPath}`);
+    }
+  } catch (error) {
+    console.error(`Error reading dictionary from ${dictPath}:`, error.message);
+    loadError = error.message;
+  }
+}
+
+if (dictionary.length === 0) {
+  console.error('Failed to load dictionary from all possible paths');
+  console.error('Current working directory:', process.cwd());
+  console.error('Function directory:', __dirname);
+  
+  // List files in the function directory for debugging
+  try {
+    const files = fs.readdirSync(__dirname);
+    console.log('Files in function directory:', files);
+  } catch (e) {
+    console.error('Cannot read function directory:', e.message);
+  }
 }
 
 exports.handler = async function (event, context) {
   console.log('Function called with:', event.queryStringParameters);
+  
+  // Add debug info to response if dictionary is empty
+  if (dictionary.length === 0) {
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({ 
+        error: 'Dictionary failed to load',
+        debug_info: {
+          function_dir: __dirname,
+          working_dir: process.cwd(),
+          load_error: loadError,
+          attempted_paths: possiblePaths
+        }
+      })
+    };
+  }
   
   const originalWord = event.queryStringParameters?.word;
   if (!originalWord) {
@@ -25,9 +76,7 @@ exports.handler = async function (event, context) {
       statusCode: 400,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+        'Access-Control-Allow-Origin': '*'
       },
       body: JSON.stringify({ error: 'Word parameter is missing' }),
     };
@@ -36,48 +85,19 @@ exports.handler = async function (event, context) {
   const cleanedWord = originalWord.toLowerCase().trim();
   console.log('Looking up word:', cleanedWord);
 
-  // --- Search Strategy ---
-  let foundEntry = null;
-
-  // 1. Look for the exact word (case-insensitive)
-  foundEntry = dictionary.find(entry => 
-    entry.french_word.toLowerCase() === cleanedWord
+  // Search for the word
+  let foundEntry = dictionary.find(entry => 
+    entry.french_word && entry.french_word.toLowerCase() === cleanedWord
   );
-  
-  if (foundEntry) {
-    console.log('Found exact match:', foundEntry.french_word);
-  }
 
-  // 2. If not found, try the singular form (if applicable)
   if (!foundEntry && cleanedWord.endsWith('s')) {
     const singularWord = cleanedWord.slice(0, -1);
     foundEntry = dictionary.find(entry => 
-      entry.french_word.toLowerCase() === singularWord
+      entry.french_word && entry.french_word.toLowerCase() === singularWord
     );
-    if (foundEntry) {
-      console.log('Found singular match:', foundEntry.french_word);
-    }
-  }
-
-  // 3. If still not found, try removing common French endings
-  if (!foundEntry) {
-    const commonEndings = ['ent', 'es', 'er', 'ez', 'ons', 'ont', 'ais', 'ait', 'aient', 'e'];
-    for (const ending of commonEndings) {
-      if (cleanedWord.endsWith(ending) && cleanedWord.length > ending.length + 2) {
-        const rootWord = cleanedWord.slice(0, -ending.length);
-        foundEntry = dictionary.find(entry => 
-          entry.french_word.toLowerCase().startsWith(rootWord)
-        );
-        if (foundEntry) {
-          console.log('Found root match:', foundEntry.french_word, 'for root:', rootWord);
-          break;
-        }
-      }
-    }
   }
 
   if (foundEntry) {
-    // Format the response to match what the frontend expects
     const responseData = {
       results: [{
         word: foundEntry.french_word,
@@ -94,20 +114,15 @@ exports.handler = async function (event, context) {
       }]
     };
 
-    console.log('Returning successful response for:', foundEntry.french_word);
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+        'Access-Control-Allow-Origin': '*'
       },
       body: JSON.stringify(responseData),
     };
   } else {
-    // If no definition is found after all checks, return a 404 error.
-    console.log('No definition found for:', originalWord);
     return {
       statusCode: 404,
       headers: {
@@ -117,7 +132,8 @@ exports.handler = async function (event, context) {
       body: JSON.stringify({ 
         error: `No definition found for "${originalWord}"`,
         searched_for: cleanedWord,
-        dictionary_size: dictionary.length
+        dictionary_size: dictionary.length,
+        sample_words: dictionary.slice(0, 5).map(entry => entry.french_word)
       }),
     };
   }
