@@ -30,26 +30,54 @@ exports.handler = async function (event, context) {
     foundEntry = dictionary.find(entry => entry.french_word.toLowerCase() === singularWord);
   }
 
+  // 3. If still not found, try removing common French endings
+  if (!foundEntry) {
+    const commonEndings = ['ent', 'es', 'er', 'ez', 'ons', 'ont', 'ais', 'ait', 'aient'];
+    for (const ending of commonEndings) {
+      if (cleanedWord.endsWith(ending) && cleanedWord.length > ending.length + 2) {
+        const rootWord = cleanedWord.slice(0, -ending.length);
+        foundEntry = dictionary.find(entry => entry.french_word.toLowerCase().startsWith(rootWord));
+        if (foundEntry) break;
+      }
+    }
+  }
+
   if (foundEntry) {
-    // If an entry is found, format it for the frontend.
+    // Format the response to match what the frontend expects
     const responseData = {
-      word: originalWord,
-      phonetic: '', // No phonetic data in this dictionary
-      audioUrl: null, // No audio data
-      definitions: [{
-        partOfSpeech: 'definition', // Generic part of speech
-        definition: foundEntry.english_word,
-        example: foundEntry.french_word_example // Use the French example
+      results: [{
+        word: foundEntry.french_word,
+        lexicalEntries: [{
+          entries: [{
+            senses: [{
+              definitions: [foundEntry.english_word],
+              examples: [{
+                text: foundEntry.french_word_example
+              }]
+            }]
+          }]
+        }]
       }]
     };
+
     return {
       statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+      },
       body: JSON.stringify(responseData),
     };
   } else {
     // If no definition is found after all checks, return a 404 error.
     return {
       statusCode: 404,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
       body: JSON.stringify({ error: `No definition found for "${originalWord}"` }),
     };
   }
