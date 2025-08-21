@@ -278,6 +278,12 @@ const dictionary = [
     "english_word": "never",
     "french_word_example": "Je ne mange jamais de viande.",
     "english_word_example": "I never eat meat."
+  },
+  {
+    "french_word": "plus",
+    "english_word": "never",
+    "french_word_example": "Je ne mange jamais de viande.",
+    "english_word_example": "I never eat meat."
   }
 ];
 
