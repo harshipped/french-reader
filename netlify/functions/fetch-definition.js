@@ -1,6 +1,13 @@
 // netlify/functions/fetch-definition.js
 // Enhanced version with phrase translation and improved word definitions
 
+// In-memory cache (persists for the lifetime of the serverless function instance)
+const translationCache = new Map();
+const definitionCache = new Map();
+
+// Cache TTL: 10 minutes
+const CACHE_TTL = 10 * 60 * 1000; // ms
+
 const https = require('https');
 const http = require('http');
 
@@ -93,30 +100,39 @@ function makeRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https:') ? https : http;
     
-    const req = protocol.get(url, options, (res) => {
+    const req = protocol.request(url, { ...options, method: options.method || 'GET' }, (res) => {
       let data = '';
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
+      res.on('data', chunk => { data += chunk; });
+      
       res.on('end', () => {
+        if (res.statusCode === 429) {
+          return reject(new Error('Too many requests - rate limited'));
+        }
+        if (res.statusCode === 400 && data.includes('detected automation')) {
+          return reject(new Error('Blocked by service'));
+        }
+
         try {
           const parsed = JSON.parse(data);
           resolve(parsed);
-        } catch (error) {
-          // Sometimes we get plain text or HTML, try to handle gracefully
+        } catch (err) {
           resolve({ rawData: data });
         }
       });
     });
 
-    req.on('error', (error) => {
-      reject(error);
-    });
+    req.on('error', reject);
 
     req.setTimeout(5000, () => {
       req.destroy();
       reject(new Error('Request timeout'));
     });
+
+    if (options.body) {
+      req.write(options.body);
+    }
+
+    req.end();
   });
 }
 
@@ -207,65 +223,122 @@ async function getWordDefinitionFromAPI(word) {
   }
 }
 
-// Get phrase translation from Google Translate
+
+
+// In-memory cache for translations
+// const translationCache = new Map();
+// const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 async function getPhraseTranslation(phrase) {
-  try {
-    console.log(`Translating phrase: ${phrase}`);
-    
-    // Use Google Translate free endpoint
-    const translateUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&dt=bd&q=${encodeURIComponent(phrase)}`;
-    
-    const result = await makeRequest(translateUrl);
-    
-    if (result && Array.isArray(result) && result[0]) {
-      // Extract main translation
-      const mainTranslation = result[0]?.[0]?.[0] || phrase;
-      
-      // Extract word-by-word breakdown if available
-      let breakdown = [];
-      const words = phrase.split(/\s+/);
-      
-      // Try to get individual word translations for breakdown
-      for (const word of words) {
-        try {
-          const cleanWord = cleanText(word);
-          if (cleanWord.length > 0) {
-            // Quick translation for individual word
-            const wordTranslateUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&q=${encodeURIComponent(cleanWord)}`;
-            const wordResult = await makeRequest(wordTranslateUrl);
-            const wordTranslation = wordResult?.[0]?.[0]?.[0] || cleanWord;
-            
-            breakdown.push({
-              word: cleanWord,
-              meaning: wordTranslation
-            });
-          }
-        } catch (error) {
-          // If individual word translation fails, add without translation
-          breakdown.push({
-            word: cleanText(word),
-            meaning: '(translation unavailable)'
-          });
-        }
-      }
-      
-      // Determine context based on common French phrases
-      let context = determineContext(phrase, mainTranslation);
-      
-      return {
-        phrase: phrase,
-        translation: mainTranslation,
-        context: context,
-        breakdown: breakdown,
-        source: 'google_translate'
-      };
+  const cleaned = cleanText(phrase).toLowerCase();
+  const now = Date.now();
+
+  // Check cache
+  if (translationCache.has(cleaned)) {
+    const { data, timestamp } = translationCache.get(cleaned);
+    if (now - timestamp < CACHE_TTL) {
+      console.log('✅ Cache hit for phrase:', cleaned);
+      return data;
+    } else {
+      translationCache.delete(cleaned);
     }
-    
-    return null;
-  } catch (error) {
-    console.error('Phrase translation failed:', error);
-    return null;
   }
+
+  try {
+    console.log('🌍 Translating with LibreTranslate:', cleaned);
+
+    const response = await makeRequest('https://libretranslate.de/translate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        q: cleaned,
+        source: 'fr',
+        target: 'en'
+      })
+    });
+
+    if (response && response.translatedText) {
+      const translation = response.translatedText;
+
+      // Build word-by-word breakdown
+      const words = cleaned.split(/\s+/);
+      const breakdown = await Promise.all(words.map(async (word) => {
+        const cleanWord = cleanText(word);
+        if (!cleanWord) return { word: '', meaning: '' };
+
+        try {
+          const wordResponse = await makeRequest('https://libretranslate.de/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              q: cleanWord,
+              source: 'fr',
+              target: 'en'
+            })
+          });
+          return {
+            word: cleanWord,
+            meaning: wordResponse.translatedText || cleanWord
+          };
+        } catch {
+          return { word: cleanWord, meaning: '(unavailable)' };
+        }
+      }));
+
+      const result = {
+        phrase: cleaned,
+        translation: translation,
+        context: determineContext(cleaned, translation),
+        breakdown: breakdown,
+        source: 'libretranslate'
+      };
+
+      // Cache the result
+      translationCache.set(cleaned, {
+        data: result,
+        timestamp: now
+      });
+
+      return result;
+    }
+  } catch (error) {
+    console.error('LibreTranslate API failed:', error.message);
+    // Fallback to dictionary
+    return getFallbackPhraseTranslation(cleaned);
+  }
+
+  return getFallbackPhraseTranslation(cleaned);
+}
+
+function getFallbackPhraseTranslation(phrase) {
+  console.log('🔁 Using fallback dictionary for:', phrase);
+  const words = phrase.split(/\s+/);
+  const breakdown = words
+    .map(word => {
+      const cleanWord = cleanText(word);
+      const entry = fallbackDictionary.find(e => 
+        e.french_word.toLowerCase() === cleanWord.toLowerCase()
+      );
+      return {
+        word: cleanWord,
+        meaning: entry ? entry.english_word : '(translation unavailable)'
+      };
+    })
+    .filter(item => item.word); // Remove empty
+
+  const translation = breakdown
+    .map(b => b.meaning.replace(/\(.*\)/, '').trim())
+    .join(' ') || phrase;
+
+  return {
+    phrase: phrase,
+    translation: translation,
+    context: determineContext(phrase, translation),
+    breakdown: breakdown,
+    source: 'fallback-dictionary'
+  };
 }
 
 // Determine context for common French phrases

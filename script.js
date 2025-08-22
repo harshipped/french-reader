@@ -380,22 +380,20 @@ document.addEventListener('DOMContentLoaded', function() {
         const toolPlaceholder = document.getElementById('tool-placeholder');
         const loaderPlaceholder = document.getElementById('loader-placeholder');
         const wordDetails = document.getElementById('word-details');
-        
-        if (toolPlaceholder) toolPlaceholder.style.display = 'none';
-        if (wordDetails) wordDetails.classList.add('hidden');
-        if (loaderPlaceholder) {
-            loaderPlaceholder.classList.remove('hidden');
-            loaderPlaceholder.style.display = 'block';
-        }
-    }
+
+        toolPlaceholder?.classList.add('hidden');
+        wordDetails?.classList.add('hidden');
+        loaderPlaceholder?.classList.remove('hidden');
+}
 
     function displayWordDefinition(data) {
         const toolPlaceholder = document.getElementById('tool-placeholder');
         const loaderPlaceholder = document.getElementById('loader-placeholder');
         const wordDetails = document.getElementById('word-details');
-        
-        if (toolPlaceholder) toolPlaceholder.style.display = 'none';
-        if (loaderPlaceholder) loaderPlaceholder.classList.add('hidden');
+
+        toolPlaceholder?.classList.add('hidden');
+        loaderPlaceholder?.classList.add('hidden');
+        wordDetails?.classList.remove('hidden');
         
         if (data.type === 'definition') {
             document.getElementById('selected-word').textContent = data.word || 'Unknown';
@@ -433,9 +431,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const toolPlaceholder = document.getElementById('tool-placeholder');
         const loaderPlaceholder = document.getElementById('loader-placeholder');
         const wordDetails = document.getElementById('word-details');
-        
-        if (toolPlaceholder) toolPlaceholder.style.display = 'none';
-        if (loaderPlaceholder) loaderPlaceholder.classList.add('hidden');
+
+        toolPlaceholder?.classList.add('hidden');
+        loaderPlaceholder?.classList.add('hidden');
+        wordDetails?.classList.remove('hidden');
         
         if (data.type === 'translation') {
             document.getElementById('selected-word').textContent = `"${data.phrase}"`;
