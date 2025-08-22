@@ -389,46 +389,54 @@ document.addEventListener('DOMContentLoaded', function() {
         loaderPlaceholder?.classList.remove('hidden');
 }
 
-    function displayWordDefinition(data) {
-        const toolPlaceholder = document.getElementById('tool-placeholder');
-        const loaderPlaceholder = document.getElementById('loader-placeholder');
-        const wordDetails = document.getElementById('word-details');
+function displayWordDefinition(data) {
+    const toolPlaceholder = document.getElementById('tool-placeholder');
+    const loaderPlaceholder = document.getElementById('loader-placeholder');
+    const wordDetails = document.getElementById('word-details');
 
-        toolPlaceholder?.classList.add('hidden');
-        loaderPlaceholder?.classList.add('hidden');
-        wordDetails?.classList.remove('hidden');
+    toolPlaceholder?.classList.add('hidden');
+    loaderPlaceholder?.classList.add('hidden');
+    wordDetails?.classList.remove('hidden');
+    
+    if (data.type === 'definition') {
+        document.getElementById('selected-word').textContent = data.word || 'Unknown';
+        document.getElementById('word-phonetic').textContent = data.phonetic || '';
+        document.getElementById('content-type-indicator').textContent = 'WORD';
         
-        if (data.type === 'definition') {
-            document.getElementById('selected-word').textContent = data.word || 'Unknown';
-            document.getElementById('word-phonetic').textContent = data.phonetic || '';
-            document.getElementById('content-type-indicator').textContent = 'WORD';
-            
-            const definitionsContainer = document.getElementById('definitions-container');
-            definitionsContainer.innerHTML = '';
-            
-            if (data.definitions && data.definitions.length > 0) {
-                data.definitions.forEach((def) => {
-                    const definitionBlock = document.createElement('div');
-                    definitionBlock.className = 'bg-white p-4 rounded-lg border border-slate-200';
-                    definitionBlock.innerHTML = `
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">${def.partOfSpeech || 'unknown'}</span>
-                        </div>
-                        <p class="text-slate-700 mb-3">${def.definition}</p>
-                        ${def.example ? `<div class="text-slate-500 italic text-sm">"${def.example}"</div>` : ''}
-                    `;
-                    definitionsContainer.appendChild(definitionBlock);
-                });
-            }
-            
-            // Hide phrase breakdown
-            document.getElementById('phrase-breakdown').classList.add('hidden');
-            
-            wordDetails.classList.remove('hidden');
+        const definitionsContainer = document.getElementById('definitions-container');
+        definitionsContainer.innerHTML = '';
+        
+        if (data.definitions && data.definitions.length > 0) {
+            data.definitions.forEach((def, index) => {
+                const definitionBlock = document.createElement('div');
+                definitionBlock.className = 'bg-white p-4 rounded-lg border border-slate-200 mb-2';
+                definitionBlock.innerHTML = `
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">
+                            ${def.partOfSpeech || 'unknown'}
+                        </span>
+                        <span class="text-slate-400 text-xs">#${index + 1}</span>
+                    </div>
+                    <p class="text-slate-700 mb-2">${def.definition}</p>
+                    ${def.example ? `<div class="text-slate-500 italic text-sm">"${def.example}"</div>` : ''}
+                `;
+                definitionsContainer.appendChild(definitionBlock);
+            });
         } else {
-            displayError('Unexpected response format for word definition.');
+            definitionsContainer.innerHTML = `
+                <div class="text-slate-400 italic">No definitions available.</div>
+            `;
         }
+        
+        // Hide phrase breakdown for single words
+        document.getElementById('phrase-breakdown').classList.add('hidden');
+        
+        wordDetails.classList.remove('hidden');
+    } else {
+        displayError('Unexpected response format for word definition.');
     }
+}
+
 
     function displayPhraseTranslation(data) {
     const toolPlaceholder = document.getElementById('tool-placeholder');

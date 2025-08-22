@@ -195,11 +195,14 @@ async function getWordDefinitionFromAPI(word) {
             word: entry.word || word,
             phonetic: entry.phonetic || entry.phonetics?.[0]?.text || '',
             audio: entry.phonetics?.find(p => p.audio)?.audio || null,
-            definitions: meanings.map(meaning => ({
-              partOfSpeech: meaning.partOfSpeech || 'unknown',
-              definition: meaning.definitions?.[0]?.definition || 'Definition available',
-              example: meaning.definitions?.[0]?.example || null
-            })),
+            definitions: meanings.flatMap(meaning =>
+  (meaning.definitions || []).map(def => ({
+    partOfSpeech: meaning.partOfSpeech || 'unknown',
+    definition: def.definition || 'Definition available',
+    example: def.example || null
+  }))
+),
+
             source: 'dictionary'
           };
         }
