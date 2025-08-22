@@ -167,17 +167,40 @@ function cleanText(text) {
 
 // Get word definition from various APIs
 // Get word definition from multiple APIs (dictionary → glosbe → translate)
+// Get word definition from multiple APIs (dictionary → microsoft → libretranslate → google)
 async function getWordDefinitionFromAPI(word) {
   try {
-    // API sequence: dictionaryapi.dev → Glosbe → Google Translate
     const apis = [
       {
         name: 'dictionary',
         url: `https://api.dictionaryapi.dev/api/v2/entries/fr/${encodeURIComponent(word)}`
       },
       {
-        name: 'glosbe',
-        url: `https://glosbe.com/gapi/translate?from=fr&dest=en&format=json&phrase=${encodeURIComponent(word)}`
+        name: 'microsoft',
+        url: `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=fr&to=en`,
+        options: {
+          method: "POST",
+          headers: {
+            "Ocp-Apim-Subscription-Key": "YOUR_AZURE_KEY",
+            "Ocp-Apim-Subscription-Region": "YOUR_REGION", // e.g., westeurope
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify([{ Text: word }])
+        }
+      },
+      {
+        name: 'libretranslate',
+        url: `https://libretranslate.de/translate`,
+        options: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            q: word,
+            source: "fr",
+            target: "en",
+            format: "text"
+          })
+        }
       },
       {
         name: 'translate',
@@ -188,7 +211,7 @@ async function getWordDefinitionFromAPI(word) {
     for (const api of apis) {
       try {
         console.log(`🔎 Trying ${api.name} API for word: ${word}`);
-        const result = await makeRequest(api.url);
+        const result = await makeRequest(api.url, api.options);
 
         // --- Dictionary API ---
         if (api.name === 'dictionary' && result && Array.isArray(result) && result[0]) {
@@ -210,25 +233,34 @@ async function getWordDefinitionFromAPI(word) {
           };
         }
 
-        // --- Glosbe API ---
-        if (api.name === 'glosbe' && result && Array.isArray(result.tuc)) {
-          const definitions = result.tuc
-            .filter(item => item.phrase && item.phrase.text)
-            .map(item => ({
+        // --- Microsoft Translator ---
+        if (api.name === 'microsoft' && Array.isArray(result) && result[0]?.translations?.[0]?.text) {
+          return {
+            type: 'definition',
+            word: word,
+            phonetic: '',
+            audio: null,
+            definitions: [{
               partOfSpeech: 'translation',
-              definition: item.phrase.text
-            }));
+              definition: result[0].translations[0].text
+            }],
+            source: 'microsoft'
+          };
+        }
 
-          if (definitions.length > 0) {
-            return {
-              type: 'definition',
-              word: word,
-              phonetic: '',
-              audio: null,
-              definitions,
-              source: 'glosbe'
-            };
-          }
+        // --- LibreTranslate ---
+        if (api.name === 'libretranslate' && result && result.translatedText) {
+          return {
+            type: 'definition',
+            word: word,
+            phonetic: '',
+            audio: null,
+            definitions: [{
+              partOfSpeech: 'translation',
+              definition: result.translatedText
+            }],
+            source: 'libretranslate'
+          };
         }
 
         // --- Google Translate ---
@@ -249,7 +281,7 @@ async function getWordDefinitionFromAPI(word) {
 
       } catch (apiError) {
         console.warn(`${api.name} API failed:`, apiError.message);
-        continue; // Try next API
+        continue;
       }
     }
 
@@ -259,6 +291,7 @@ async function getWordDefinitionFromAPI(word) {
     return null;
   }
 }
+
 
 
 // In-memory cache for translations
