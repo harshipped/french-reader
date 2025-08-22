@@ -399,7 +399,7 @@ function displayWordDefinition(data) {
     wordDetails?.classList.remove('hidden');
     
     if (data.type === 'definition') {
-        document.getElementById('selected-word').textContent = data.word || 'Unknown';
+        document.getElementById('selected-word').textContent = data.word || '';
         document.getElementById('word-phonetic').textContent = data.phonetic || '';
         document.getElementById('content-type-indicator').textContent = 'WORD';
         
@@ -413,7 +413,7 @@ function displayWordDefinition(data) {
                 definitionBlock.innerHTML = `
                     <div class="flex items-center gap-2 mb-2">
                         <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">
-                            ${def.partOfSpeech || 'unknown'}
+                            ${def.partOfSpeech || ''}
                         </span>
                         <span class="text-slate-400 text-xs">#${index + 1}</span>
                     </div>
