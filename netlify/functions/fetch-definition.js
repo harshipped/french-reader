@@ -1,210 +1,493 @@
 // netlify/functions/fetch-definition.js
-// Enhanced version with external French dictionary API and audio
+// Enhanced version with phrase translation and improved word definitions
 
 const https = require('https');
 const http = require('http');
 
-// Fallback local dictionary for common words (in case API fails)
+// Expanded fallback dictionary for common French words
 const fallbackDictionary = [
   {
     "french_word": "puis",
     "english_word": "then",
+    "part_of_speech": "adverb",
     "french_word_example": "D'abord nous mangeons, puis nous partons.",
-    "english_word_example": "First we eat, then we leave."
+    "english_word_example": "First we eat, then we leave.",
+    "phonetic": "/pɥi/"
   },
   {
     "french_word": "dans",
     "english_word": "in",
+    "part_of_speech": "preposition",
     "french_word_example": "Les animaux sauvages vivent dans la forêt.",
-    "english_word_example": "Wild animals live in the forest."
+    "english_word_example": "Wild animals live in the forest.",
+    "phonetic": "/dɑ̃/"
   },
   {
     "french_word": "bonjour",
-    "english_word": "hello",
+    "english_word": "hello/good morning",
+    "part_of_speech": "interjection",
     "french_word_example": "Bonjour, comment allez-vous ?",
-    "english_word_example": "Hello, how are you?"
+    "english_word_example": "Hello, how are you?",
+    "phonetic": "/bonˈʒuʁ/"
   },
   {
     "french_word": "merci",
     "english_word": "thank you",
+    "part_of_speech": "interjection",
     "french_word_example": "Merci beaucoup pour votre aide.",
-    "english_word_example": "Thank you very much for your help."
+    "english_word_example": "Thank you very much for your help.",
+    "phonetic": "/mɛʁˈsi/"
   },
   {
     "french_word": "vous",
     "english_word": "you",
+    "part_of_speech": "pronoun",
     "french_word_example": "Comment vous appelez-vous ?",
-    "english_word_example": "What is your name?"
+    "english_word_example": "What is your name?",
+    "phonetic": "/vu/"
+  },
+  {
+    "french_word": "avec",
+    "english_word": "with",
+    "part_of_speech": "preposition",
+    "french_word_example": "Je vais avec mes amis.",
+    "english_word_example": "I'm going with my friends.",
+    "phonetic": "/aˈvɛk/"
+  },
+  {
+    "french_word": "être",
+    "english_word": "to be",
+    "part_of_speech": "verb",
+    "french_word_example": "Je suis content d'être ici.",
+    "english_word_example": "I'm happy to be here.",
+    "phonetic": "/ɛtʁ/"
+  },
+  {
+    "french_word": "avoir",
+    "english_word": "to have",
+    "part_of_speech": "verb",
+    "french_word_example": "J'ai faim.",
+    "english_word_example": "I am hungry.",
+    "phonetic": "/aˈvwaʁ/"
+  },
+  {
+    "french_word": "faire",
+    "english_word": "to do/make",
+    "part_of_speech": "verb",
+    "french_word_example": "Que faites-vous ?",
+    "english_word_example": "What are you doing?",
+    "phonetic": "/fɛʁ/"
+  },
+  {
+    "french_word": "aller",
+    "english_word": "to go",
+    "part_of_speech": "verb",
+    "french_word_example": "Je vais au marché.",
+    "english_word_example": "I'm going to the market.",
+    "phonetic": "/aˈle/"
   }
 ];
 
-// Helper function to make HTTP requests
-function makeRequest(url) {
+// Helper function to make HTTP/HTTPS requests
+function makeRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https:') ? https : http;
     
-    protocol.get(url, (res) => {
+    const req = protocol.get(url, options, (res) => {
       let data = '';
       res.on('data', (chunk) => {
         data += chunk;
       });
       res.on('end', () => {
         try {
-          resolve(JSON.parse(data));
+          const parsed = JSON.parse(data);
+          resolve(parsed);
         } catch (error) {
-          reject(new Error('Invalid JSON response'));
+          // Sometimes we get plain text or HTML, try to handle gracefully
+          resolve({ rawData: data });
         }
       });
-    }).on('error', (error) => {
+    });
+
+    req.on('error', (error) => {
       reject(error);
+    });
+
+    req.setTimeout(5000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
     });
   });
 }
 
-// Function to get word definition from external API
+// Determine if input is a single word or phrase
+function isPhrase(text) {
+  const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+  return words.length > 1;
+}
+
+// Count words in text
+function countWords(text) {
+  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+}
+
+// Clean and validate text input
+function cleanText(text) {
+  return text
+    .trim()
+    .replace(/\s+/g, ' ') // normalize whitespace
+    .replace(/^[.,!?;:"'()[\]{}—–-]+|[.,!?;:"'()[\]{}—–-]+$/g, '') // remove leading/trailing punctuation
+    .trim();
+}
+
+// Get word definition from various APIs
 async function getWordDefinitionFromAPI(word) {
   try {
-    // Try French Wiktionary API first
-    const wiktionaryUrl = `https://fr.wiktionary.org/api/rest_v1/page/definition/${encodeURIComponent(word)}`;
-    
-    try {
-      const wiktionaryResult = await makeRequest(wiktionaryUrl);
-      if (wiktionaryResult && wiktionaryResult.fr && wiktionaryResult.fr[0]) {
-        const definition = wiktionaryResult.fr[0];
-        return {
-          word: word,
-          definition: definition.definition || 'Definition available',
-          example: definition.examples && definition.examples[0] ? definition.examples[0].text : `Exemple avec ${word}`,
-          source: 'wiktionary'
-        };
+    // Try multiple French dictionary APIs in sequence
+    const apis = [
+      // Free Dictionary API (supports French)
+      {
+        name: 'dictionary',
+        url: `https://api.dictionaryapi.dev/api/v2/entries/fr/${encodeURIComponent(word)}`
+      },
+      // Alternative: Use Google Translate for basic definition
+      {
+        name: 'translate',
+        url: `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&q=${encodeURIComponent(word)}`
       }
-    } catch (wiktionaryError) {
-      console.log('Wiktionary failed, trying alternative...');
-    }
+    ];
 
-    // Try alternative: French Dictionary API
-    const dictUrl = `https://api.dictionaryapi.dev/api/v2/entries/fr/${encodeURIComponent(word)}`;
-    
-    try {
-      const dictResult = await makeRequest(dictUrl);
-      if (dictResult && dictResult[0]) {
-        const entry = dictResult[0];
-        const meaning = entry.meanings && entry.meanings[0];
-        const definition = meaning && meaning.definitions && meaning.definitions[0];
+    for (const api of apis) {
+      try {
+        console.log(`Trying ${api.name} API for word: ${word}`);
+        const result = await makeRequest(api.url);
         
-        return {
-          word: entry.word || word,
-          definition: definition ? definition.definition : 'Définition disponible',
-          example: definition && definition.example ? definition.example : `Exemple avec ${word}`,
-          phonetic: entry.phonetic || '',
-          audio: entry.phonetics && entry.phonetics.find(p => p.audio) ? entry.phonetics.find(p => p.audio).audio : null,
-          source: 'dictionary'
-        };
+        if (api.name === 'dictionary' && result && Array.isArray(result) && result[0]) {
+          const entry = result[0];
+          const meanings = entry.meanings || [];
+          
+          return {
+            word: entry.word || word,
+            phonetic: entry.phonetic || entry.phonetics?.[0]?.text || '',
+            audio: entry.phonetics?.find(p => p.audio)?.audio || null,
+            definitions: meanings.map(meaning => ({
+              partOfSpeech: meaning.partOfSpeech || 'unknown',
+              definition: meaning.definitions?.[0]?.definition || 'Definition available',
+              example: meaning.definitions?.[0]?.example || null
+            })),
+            source: 'dictionary'
+          };
+        }
+        
+        if (api.name === 'translate' && result && Array.isArray(result) && result[0]?.[0]?.[0]) {
+          const translation = result[0][0][0];
+          return {
+            word: word,
+            phonetic: '',
+            audio: null,
+            definitions: [{
+              partOfSpeech: 'unknown',
+              definition: translation,
+              example: `Exemple: "${word}" dans une phrase.`
+            }],
+            source: 'translate'
+          };
+        }
+        
+      } catch (apiError) {
+        console.log(`${api.name} API failed:`, apiError.message);
+        continue;
       }
-    } catch (dictError) {
-      console.log('Dictionary API failed, using fallback...');
-    }
-
-    // Try Google Translate API (free endpoint) as last resort
-    const translateUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&q=${encodeURIComponent(word)}`;
-    
-    try {
-      const translateResult = await makeRequest(translateUrl);
-      if (translateResult && translateResult[0] && translateResult[0][0]) {
-        const translation = translateResult[0][0][0];
-        return {
-          word: word,
-          definition: translation,
-          example: `Exemple: ${word} dans une phrase.`,
-          source: 'translate'
-        };
-      }
-    } catch (translateError) {
-      console.log('All APIs failed, using fallback dictionary');
     }
 
     return null;
   } catch (error) {
-    console.error('API request failed:', error);
+    console.error('All word definition APIs failed:', error);
     return null;
   }
 }
 
-// Function to search fallback dictionary
+// Get phrase translation from Google Translate
+async function getPhraseTranslation(phrase) {
+  try {
+    console.log(`Translating phrase: ${phrase}`);
+    
+    // Use Google Translate free endpoint
+    const translateUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&dt=bd&q=${encodeURIComponent(phrase)}`;
+    
+    const result = await makeRequest(translateUrl);
+    
+    if (result && Array.isArray(result) && result[0]) {
+      // Extract main translation
+      const mainTranslation = result[0]?.[0]?.[0] || phrase;
+      
+      // Extract word-by-word breakdown if available
+      let breakdown = [];
+      const words = phrase.split(/\s+/);
+      
+      // Try to get individual word translations for breakdown
+      for (const word of words) {
+        try {
+          const cleanWord = cleanText(word);
+          if (cleanWord.length > 0) {
+            // Quick translation for individual word
+            const wordTranslateUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&q=${encodeURIComponent(cleanWord)}`;
+            const wordResult = await makeRequest(wordTranslateUrl);
+            const wordTranslation = wordResult?.[0]?.[0]?.[0] || cleanWord;
+            
+            breakdown.push({
+              word: cleanWord,
+              meaning: wordTranslation
+            });
+          }
+        } catch (error) {
+          // If individual word translation fails, add without translation
+          breakdown.push({
+            word: cleanText(word),
+            meaning: '(translation unavailable)'
+          });
+        }
+      }
+      
+      // Determine context based on common French phrases
+      let context = determineContext(phrase, mainTranslation);
+      
+      return {
+        phrase: phrase,
+        translation: mainTranslation,
+        context: context,
+        breakdown: breakdown,
+        source: 'google_translate'
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Phrase translation failed:', error);
+    return null;
+  }
+}
+
+// Determine context for common French phrases
+function determineContext(originalPhrase, translation) {
+  const phrase = originalPhrase.toLowerCase();
+  
+  // Common greeting patterns
+  if (phrase.includes('bonjour') || phrase.includes('bonsoir') || phrase.includes('salut')) {
+    return 'greeting';
+  }
+  
+  // Question patterns
+  if (phrase.startsWith('comment') || phrase.startsWith('qu\'est-ce') || phrase.startsWith('où') || 
+      phrase.startsWith('quand') || phrase.startsWith('pourquoi') || phrase.includes('?')) {
+    return 'question';
+  }
+  
+  // Polite expressions
+  if (phrase.includes('merci') || phrase.includes('s\'il vous plaît') || phrase.includes('excusez-moi')) {
+    return 'polite expression';
+  }
+  
+  // Time expressions
+  if (phrase.includes('aujourd\'hui') || phrase.includes('demain') || phrase.includes('hier') ||
+      phrase.includes('maintenant') || phrase.includes('plus tard')) {
+    return 'time expression';
+  }
+  
+  // Location expressions
+  if (phrase.includes('ici') || phrase.includes('là') || phrase.includes('où') || phrase.includes('dans')) {
+    return 'location expression';
+  }
+  
+  // Action/verb phrases
+  if (phrase.includes('je veux') || phrase.includes('j\'ai') || phrase.includes('je suis') ||
+      phrase.includes('nous allons') || phrase.includes('vous êtes')) {
+    return 'action or state';
+  }
+  
+  return 'general expression';
+}
+
+// Search fallback dictionary for single words
 function searchFallbackDictionary(word) {
   const cleanedWord = word.toLowerCase();
   
+  // Exact match first
   let foundEntry = fallbackDictionary.find(entry => 
     entry.french_word.toLowerCase() === cleanedWord
   );
 
-  if (!foundEntry && cleanedWord.endsWith('s')) {
+  // Try without final 's' (plural)
+  if (!foundEntry && cleanedWord.endsWith('s') && cleanedWord.length > 2) {
     const singularWord = cleanedWord.slice(0, -1);
     foundEntry = fallbackDictionary.find(entry => 
       entry.french_word.toLowerCase() === singularWord
     );
   }
 
+  // Try without final 'e' (feminine)
+  if (!foundEntry && cleanedWord.endsWith('e') && cleanedWord.length > 2) {
+    const masculineWord = cleanedWord.slice(0, -1);
+    foundEntry = fallbackDictionary.find(entry => 
+      entry.french_word.toLowerCase() === masculineWord
+    );
+  }
+
   return foundEntry;
 }
 
+// Main handler function
 exports.handler = async function (event, context) {
-  console.log('Function called with:', event.queryStringParameters);
+  console.log('Function called with method:', event.httpMethod);
   
-  const originalWord = event.queryStringParameters?.word;
-  if (!originalWord) {
+  // Handle CORS preflight requests
+  if (event.httpMethod === 'OPTIONS') {
     return {
-      statusCode: 400,
+      statusCode: 200,
       headers: {
-        'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
       },
-      body: JSON.stringify({ error: 'Word parameter is missing' }),
+      body: ''
     };
   }
 
-  const cleanedWord = originalWord.toLowerCase().trim();
-  console.log('Looking up word:', cleanedWord);
-
-  // Try external API first
-  let wordData = await getWordDefinitionFromAPI(cleanedWord);
+  let requestData;
   
-  // If API fails, try fallback dictionary
-  if (!wordData) {
-    const fallbackEntry = searchFallbackDictionary(cleanedWord);
-    if (fallbackEntry) {
-      wordData = {
-        word: fallbackEntry.french_word,
-        definition: fallbackEntry.english_word,
-        example: fallbackEntry.french_word_example,
-        source: 'fallback'
+  // Handle both GET and POST requests
+  if (event.httpMethod === 'GET') {
+    // Legacy support for GET requests with query parameter
+    const word = event.queryStringParameters?.word;
+    if (!word) {
+      return {
+        statusCode: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        },
+        body: JSON.stringify({ error: 'Word parameter is missing' })
       };
     }
+    requestData = { text: word, isPhrase: false };
+  } else if (event.httpMethod === 'POST') {
+    // Parse POST body
+    try {
+      requestData = JSON.parse(event.body || '{}');
+    } catch (error) {
+      return {
+        statusCode: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        },
+        body: JSON.stringify({ error: 'Invalid JSON in request body' })
+      };
+    }
+  } else {
+    return {
+      statusCode: 405,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({ error: 'Method not allowed' })
+    };
   }
 
-  if (wordData) {
-    // Format response to match frontend expectations
-    const responseData = {
-      results: [{
-        word: wordData.word,
-        phonetic: wordData.phonetic || '',
-        audio: wordData.audio || null,
-        lexicalEntries: [{
-          entries: [{
-            senses: [{
-              definitions: [wordData.definition],
-              examples: [{
-                text: wordData.example
-              }]
-            }]
-          }]
-        }]
-      }]
+  const { text, isPhrase } = requestData;
+  
+  if (!text) {
+    return {
+      statusCode: 400,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({ error: 'Text parameter is missing' })
     };
+  }
 
-    console.log('Returning successful response for:', wordData.word, 'from:', wordData.source);
+  const cleanedText = cleanText(text);
+  const wordCount = countWords(cleanedText);
+  
+  console.log(`Processing: "${cleanedText}" (${wordCount} words, isPhrase: ${isPhrase})`);
+
+  // Validate word count
+  if (wordCount > 8) {
+    return {
+      statusCode: 400,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({ 
+        error: 'Selection too long. Maximum 8 words allowed.',
+        wordCount: wordCount
+      })
+    };
+  }
+
+  let responseData;
+
+  try {
+    if (isPhrase || wordCount > 1) {
+      // Handle phrase translation
+      console.log('Processing as phrase...');
+      const translationData = await getPhraseTranslation(cleanedText);
+      
+      if (translationData) {
+        responseData = {
+          type: 'translation',
+          phrase: translationData.phrase,
+          translation: translationData.translation,
+          context: translationData.context,
+          breakdown: translationData.breakdown,
+          source: translationData.source
+        };
+      } else {
+        throw new Error('Failed to translate phrase');
+      }
+      
+    } else {
+      // Handle single word definition
+      console.log('Processing as single word...');
+      let wordData = await getWordDefinitionFromAPI(cleanedText);
+      
+      // Fallback to local dictionary if API fails
+      if (!wordData) {
+        const fallbackEntry = searchFallbackDictionary(cleanedText);
+        if (fallbackEntry) {
+          wordData = {
+            word: fallbackEntry.french_word,
+            phonetic: fallbackEntry.phonetic || '',
+            audio: null,
+            definitions: [{
+              partOfSpeech: fallbackEntry.part_of_speech || 'unknown',
+              definition: fallbackEntry.english_word,
+              example: fallbackEntry.french_word_example
+            }],
+            source: 'fallback'
+          };
+        }
+      }
+
+      if (wordData) {
+        responseData = {
+          type: 'definition',
+          word: wordData.word,
+          phonetic: wordData.phonetic,
+          audio: wordData.audio,
+          definitions: wordData.definitions,
+          source: wordData.source
+        };
+      } else {
+        throw new Error(`No definition found for "${cleanedText}"`);
+      }
+    }
+
+    console.log(`Successfully processed "${cleanedText}" as ${responseData.type}`);
+    
     return {
       statusCode: 200,
       headers: {
@@ -213,22 +496,26 @@ exports.handler = async function (event, context) {
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
       },
-      body: JSON.stringify(responseData),
+      body: JSON.stringify(responseData)
     };
-  } else {
-    // No definition found anywhere
-    console.log('No definition found for:', originalWord);
+
+  } catch (error) {
+    console.error('Processing failed:', error.message);
+    
     return {
       statusCode: 404,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*'
       },
-      body: JSON.stringify({ 
-        error: `No definition found for "${originalWord}"`,
-        searched_for: cleanedWord,
-        suggestion: 'Try checking the spelling or try a different word form'
-      }),
+      body: JSON.stringify({
+        error: error.message,
+        searched_for: cleanedText,
+        word_count: wordCount,
+        suggestion: wordCount > 1 ? 
+          'Try selecting fewer words or check spelling' : 
+          'Try checking the spelling or try a different word form'
+      })
     };
   }
 };

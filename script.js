@@ -1,442 +1,364 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // --- DOM ELEMENTS ---
+// Enhanced script.js with phrase selection functionality
+let lastSelectedWord = null;
+let currentSelection = null;
+let floatingButton = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.getElementById('file-input');
+    const uploadArea = document.getElementById('upload-area');
     const readingPane = document.getElementById('reading-pane');
-    const placeholderText = document.getElementById('placeholder-text');
-    const documentTitle = document.getElementById('document-title');
-    const fileUpload = document.getElementById('file-upload');
-    const toolPlaceholder = document.getElementById('tool-placeholder');
-    const loaderPlaceholder = document.getElementById('loader-placeholder');
-    const wordDetails = document.getElementById('word-details');
-    const selectedWordEl = document.getElementById('selected-word');
-    const pronounceBtn = document.getElementById('pronounce-btn');
-    const wordPhoneticEl = document.getElementById('word-phonetic');
-    const definitionsContainer = document.getElementById('definitions-container');
+    const sidebar = document.getElementById('sidebar');
+    const closeBtn = document.getElementById('close-btn');
 
-    // --- APP STATE ---
-    let currentSelectedWordSpan = null;
-    let currentAudioUrl = null;
-
-    // --- CORE FUNCTIONS ---
-
-    /**
-     * Resets the entire reader UI to its initial state.
-     */
-    function resetReader() {
-        if (currentSelectedWordSpan) {
-            currentSelectedWordSpan.classList.remove('selected');
-            currentSelectedWordSpan = null;
-        }
-        wordDetails.classList.add('hidden');
-        loaderPlaceholder.classList.add('hidden');
-        toolPlaceholder.style.display = 'block';
-        toolPlaceholder.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg><p class="font-medium">Click on a word in the text to see its definition.</p>`;
-    }
-
-    /**
-     * Creates a clickable word element
-     * @param {string} word - The word text
-     * @returns {HTMLElement} - The clickable span element
-     */
-    function createWordSpan(word) {
-        const span = document.createElement('span');
-        span.textContent = word;
-        span.className = 'word';
-        return span;
-    }
-
-    /**
-     * Processes text while preserving basic formatting (paragraphs, line breaks)
-     * @param {string} text - The text to process.
-     */
-    function loadTextWithFormatting(text) {
-        placeholderText.style.display = 'none';
-        readingPane.innerHTML = '';
-        
-        // Split text into paragraphs
-        const paragraphs = text.split(/\n\s*\n/);
-        
-        paragraphs.forEach((paragraph, index) => {
-            if (paragraph.trim().length === 0) return;
-            
-            // Create paragraph element
-            const p = document.createElement('p');
-            p.className = 'mb-4 text-justify';
-            
-            // Split paragraph into lines
-            const lines = paragraph.split(/\n/);
-            
-            lines.forEach((line, lineIndex) => {
-                if (lineIndex > 0) {
-                    p.appendChild(document.createElement('br'));
-                }
-                
-                // Split line into words and spaces
-                const parts = line.split(/(\s+)/);
-                
-                parts.forEach(part => {
-                    if (part.trim().length > 0) {
-                        // It's a word
-                        p.appendChild(createWordSpan(part));
-                    } else {
-                        // It's whitespace
-                        p.appendChild(document.createTextNode(part));
-                    }
-                });
-            });
-            
-            readingPane.appendChild(p);
-        });
-        
-        resetReader();
-    }
-
-    /**
-     * Simple text processing (fallback for plain text)
-     * @param {string} text - The text to process.
-     */
-    function loadText(text) {
-        placeholderText.style.display = 'none';
-        readingPane.innerHTML = '';
-        const words = text.split(/(\s+)/);
-        words.forEach(word => {
-            if (word.trim().length > 0) {
-                readingPane.appendChild(createWordSpan(word));
-            } else {
-                readingPane.appendChild(document.createTextNode(word));
-            }
-        });
-        resetReader();
-    }
-
-    /**
-     * Shows the paste text modal
-     */
-    function showPasteModal() {
-        // Create modal overlay
-        const overlay = document.createElement('div');
-        overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-        
-        // Create modal content
-        const modal = document.createElement('div');
-        modal.className = 'bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col';
-        
-        modal.innerHTML = `
-            <div class="p-6 border-b border-gray-200">
-                <h2 class="text-xl font-bold text-gray-800">Paste French Text</h2>
-                <p class="text-sm text-gray-600 mt-1">Paste your French text below and click "Load Text" to start reading.</p>
-            </div>
-            <div class="flex-1 p-6">
-                <textarea 
-                    id="paste-textarea" 
-                    class="w-full h-64 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Paste your French text here..."
-                    style="font-family: 'Lora', serif; line-height: 1.6;"
-                ></textarea>
-            </div>
-            <div class="p-6 border-t border-gray-200 flex justify-end space-x-3">
-                <button id="cancel-paste" class="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">
-                    Cancel
-                </button>
-                <button id="load-paste" class="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors">
-                    Load Text
-                </button>
-            </div>
-        `;
-        
-        overlay.appendChild(modal);
-        document.body.appendChild(overlay);
-        
-        const textarea = document.getElementById('paste-textarea');
-        const cancelBtn = document.getElementById('cancel-paste');
-        const loadBtn = document.getElementById('load-paste');
-        
-        // Focus the textarea
-        textarea.focus();
-        
-        // Handle cancel
-        function closeModal() {
-            document.body.removeChild(overlay);
-        }
-        
-        cancelBtn.addEventListener('click', closeModal);
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) closeModal();
-        });
-        
-        // Handle load text
-        loadBtn.addEventListener('click', () => {
-            const text = textarea.value.trim();
-            if (text) {
-                documentTitle.textContent = 'Pasted Text';
-                loadTextWithFormatting(text);
-                closeModal();
-            } else {
-                textarea.focus();
-                textarea.style.borderColor = '#ef4444';
-                setTimeout(() => {
-                    textarea.style.borderColor = '';
-                }, 2000);
-            }
-        });
-        
-        // Handle Ctrl+Enter to load
-        textarea.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                loadBtn.click();
-            }
-        });
-    }
-
-    /**
-     * Fetches word definition from the enhanced serverless function.
-     * @param {string} word - The word to look up.
-     */
-    async function showWordDetails(word) {
-        const cleanedWord = word.toLowerCase().replace(/[.,«»"';:()!?]/g, '').trim();
-        if (!cleanedWord) return;
-        
-        // Reset the UI
-        toolPlaceholder.style.display = 'none';
-        wordDetails.classList.add('hidden');
-        loaderPlaceholder.classList.remove('hidden');
-
-        // Call the enhanced Netlify function
-        const endpoint = `/api/fetch-definition?word=${encodeURIComponent(cleanedWord)}`;
-
-        try {
-            const response = await fetch(endpoint);
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            const data = await response.json();
-
-            // --- Handle the successful response ---
-            const result = data.results[0];
-            selectedWordEl.textContent = result.word;
-            
-            // Display phonetic if available
-            if (result.phonetic) {
-                wordPhoneticEl.textContent = result.phonetic;
-                wordPhoneticEl.style.display = 'block';
-            } else {
-                wordPhoneticEl.style.display = 'none';
-            }
-
-            // Store audio URL for pronunciation
-            currentAudioUrl = result.audio;
-            
-            // Show/hide pronounce button based on audio availability
-            if (currentAudioUrl || 'speechSynthesis' in window) {
-                pronounceBtn.style.display = 'block';
-                // Update button title based on audio source
-                if (currentAudioUrl) {
-                    pronounceBtn.title = 'Play audio pronunciation';
-                } else {
-                    pronounceBtn.title = 'Text-to-speech pronunciation';
-                }
-            } else {
-                pronounceBtn.style.display = 'none';
-            }
-
-            // Clear previous definitions
-            definitionsContainer.innerHTML = '';
-
-            // Add the definition (WITHOUT EXAMPLES)
-            const senses = result.lexicalEntries[0].entries[0].senses;
-            senses.forEach((sense, index) => {
-                const definition = sense.definitions[0];
-
-                const defBlock = document.createElement('div');
-                defBlock.className = 'mb-4';
-                defBlock.innerHTML = `
-                    <h3 class="font-semibold text-slate-600 mb-2">Definition ${index + 1}</h3>
-                    <p class="bg-white p-4 rounded-lg border border-slate-200">${definition}</p>
-                `;
-                definitionsContainer.appendChild(defBlock);
-            });
-
-            // Show the word details
-            wordDetails.classList.remove('hidden');
-
-        } catch (error) {
-            // --- Handle errors (404, network issues, etc.) ---
-            console.error("Fetch Error:", error);
-            
-            let errorMessage = `No definition found for "${cleanedWord}".`;
-            let suggestion = 'The word may not be in the dictionary, or it could be a conjugated form.';
-            
-            if (error.message.includes('HTTP 404')) {
-                suggestion = 'Try checking the spelling or try a different word form.';
-            } else if (error.message.includes('Failed to fetch')) {
-                errorMessage = 'Network error occurred.';
-                suggestion = 'Please check your internet connection and try again.';
-            }
-            
-            toolPlaceholder.innerHTML = `
-                <div class="text-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-red-400"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                    <p class="font-medium text-red-500 mb-2">${errorMessage}</p>
-                    <p class="text-sm text-slate-400">${suggestion}</p>
-                </div>`;
-            toolPlaceholder.style.display = 'block';
-        } finally {
-            // Always hide the loader
-            loaderPlaceholder.classList.add('hidden');
-        }
-    }
-
-    /**
-     * Plays the audio for the current word using the best available method.
-     */
-    function pronounceWord() {
-        const wordToPronounce = selectedWordEl.textContent;
-        
-        if (currentAudioUrl) {
-            // Use real audio file if available
-            try {
-                const audio = new Audio(currentAudioUrl);
-                audio.play().catch(error => {
-                    console.error('Audio playback failed:', error);
-                    // Fallback to speech synthesis
-                    useSpeechSynthesis(wordToPronounce);
-                });
-            } catch (error) {
-                console.error('Audio creation failed:', error);
-                useSpeechSynthesis(wordToPronounce);
-            }
-        } else {
-            // Use browser's speech synthesis as fallback
-            useSpeechSynthesis(wordToPronounce);
-        }
-    }
-
-    /**
-     * Uses browser's speech synthesis to pronounce a word.
-     * @param {string} word - The word to pronounce
-     */
-    function useSpeechSynthesis(word) {
-        if ('speechSynthesis' in window) {
-            // Cancel any ongoing speech
-            window.speechSynthesis.cancel();
-            
-            const utterance = new SpeechSynthesisUtterance(word);
-            utterance.lang = 'fr-FR'; // Set language to French
-            utterance.rate = 0.8; // Slightly slower for clarity
-            utterance.volume = 0.8;
-            
-            // Try to use a French voice if available
-            const voices = window.speechSynthesis.getVoices();
-            const frenchVoice = voices.find(voice => voice.lang.startsWith('fr'));
-            if (frenchVoice) {
-                utterance.voice = frenchVoice;
-            }
-            
-            window.speechSynthesis.speak(utterance);
-        } else {
-            console.error("Speech Synthesis not supported in this browser.");
-            alert("Audio pronunciation not supported in this browser.");
-        }
-    }
-
-    // Load voices when they become available
-    if ('speechSynthesis' in window) {
-        speechSynthesis.onvoiceschanged = function() {
-            // Voices are now loaded
-            console.log('Speech synthesis voices loaded:', speechSynthesis.getVoices().length);
-        };
-    }
-
-    // --- EVENT LISTENERS ---
-
-    // Click on a word in the text
-    readingPane.addEventListener('click', (e) => {
-        if (e.target.classList.contains('word')) {
-            // Deselect the previously selected word
-            if (currentSelectedWordSpan) {
-                currentSelectedWordSpan.classList.remove('selected');
-            }
-            // Select the new word
-            e.target.classList.add('selected');
-            currentSelectedWordSpan = e.target;
-            
-            // Look up the definition
-            const word = e.target.textContent;
-            showWordDetails(word);
-        }
+    // File upload functionality
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('drag-over');
     });
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('drag-over');
+    });
+    uploadArea.addEventListener('drop', handleFileDrop);
+    fileInput.addEventListener('change', handleFileSelect);
 
-    // Click on the speaker button
-    pronounceBtn.addEventListener('click', pronounceWord);
+    // Text selection functionality
+    readingPane.addEventListener('mouseup', handleTextSelection);
+    readingPane.addEventListener('click', handleWordClick);
+    document.addEventListener('mousedown', handleDocumentClick);
 
-    // Upload a new document
-    fileUpload.addEventListener('change', (e) => {
+    // Sidebar close functionality
+    closeBtn.addEventListener('click', closeSidebar);
+
+    // Initialize floating button
+    createFloatingButton();
+
+    function handleFileDrop(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFile(files[0]);
+        }
+    }
+
+    function handleFileSelect(e) {
         const file = e.target.files[0];
-        if (!file) return;
+        if (file) {
+            handleFile(file);
+        }
+    }
 
-        documentTitle.textContent = file.name;
-        placeholderText.style.display = 'none';
-        readingPane.innerHTML = '<div class="loader mx-auto mt-20"></div><p class="text-center mt-4">Loading document...</p>';
+    function handleFile(file) {
+        if (file.type !== 'text/plain') {
+            alert('Please select a text file (.txt)');
+            return;
+        }
 
         const reader = new FileReader();
-        const fileExtension = file.name.split('.').pop().toLowerCase();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            displayText(content);
+            document.getElementById('upload-container').style.display = 'none';
+            document.getElementById('reading-container').style.display = 'flex';
+        };
+        reader.readAsText(file, 'UTF-8');
+    }
 
-        if (fileExtension === 'txt') {
-            reader.onload = (event) => loadTextWithFormatting(event.target.result);
-            reader.readAsText(file);
-        } else if (fileExtension === 'pdf') {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
-            reader.onload = (event) => {
-                const loadingTask = pdfjsLib.getDocument({ data: event.target.result });
-                loadingTask.promise.then(pdf => {
-                    let fullText = '';
-                    const pagePromises = [];
-                    for (let i = 1; i <= pdf.numPages; i++) {
-                        pagePromises.push(pdf.getPage(i).then(page => page.getTextContent()));
-                    }
-                    Promise.all(pagePromises).then(textContents => {
-                        textContents.forEach(textContent => {
-                            textContent.items.forEach(item => {
-                                fullText += item.str + ' ';
-                            });
-                            fullText += '\n\n'; // Add paragraph breaks between pages
-                        });
-                        loadTextWithFormatting(fullText);
+    function displayText(text) {
+        const words = text.split(/(\s+|[.,!?;:"'()[\]{}—–-])/);
+        const processedWords = words.map(word => {
+            const trimmed = word.trim();
+            if (trimmed && /[a-zA-ZàáâäçèéêëîïôöùúûüÿæœÀÁÂÄÇÈÉÊËÎÏÔÖÙÚÛÜŸÆŒ]/.test(trimmed)) {
+                return `<span class="word" data-word="${trimmed.toLowerCase()}">${word}</span>`;
+            }
+            return word;
+        });
+        readingPane.innerHTML = processedWords.join('');
+    }
+
+    function handleTextSelection(e) {
+        // Small delay to ensure selection is complete
+        setTimeout(() => {
+            const selection = window.getSelection();
+            if (selection.rangeCount === 0 || selection.isCollapsed) {
+                hideFloatingButton();
+                return;
+            }
+
+            const selectedText = selection.toString().trim();
+            if (!selectedText) {
+                hideFloatingButton();
+                return;
+            }
+
+            // Validate selection
+            const validation = validateSelection(selectedText);
+            if (!validation.valid) {
+                hideFloatingButton();
+                if (validation.error) {
+                    showTooltip(validation.error, e.clientX, e.clientY);
+                }
+                return;
+            }
+
+            // Store current selection
+            currentSelection = {
+                text: validation.cleanText,
+                range: selection.getRangeAt(0).cloneRange()
+            };
+
+            // Show floating button
+            showFloatingButton(e.clientX, e.clientY);
+        }, 10);
+    }
+
+    function validateSelection(text) {
+        // Remove extra whitespace and clean up
+        const cleanText = text.replace(/\s+/g, ' ').trim();
+        
+        // Count words (split by whitespace, filter empty strings)
+        const words = cleanText.split(/\s+/).filter(word => word.length > 0);
+        
+        if (words.length === 0) {
+            return { valid: false };
+        }
+        
+        if (words.length > 8) {
+            return { 
+                valid: false, 
+                error: 'Selection too long. Please select 8 words or fewer.' 
+            };
+        }
+
+        // Check if contains French characters or common words
+        const hasFrenchContent = /[àáâäçèéêëîïôöùúûüÿæœÀÁÂÄÇÈÉÊËÎÏÔÖÙÚÛÜŸÆŒ]/.test(cleanText) ||
+                                /\b(le|la|les|un|une|de|du|des|et|ou|mais|donc|car|ni|or|ce|cette|ces|il|elle|ils|elles|nous|vous|je|tu|me|te|se|dans|sur|avec|pour|par|sans|sous|entre|chez|vers|depuis|pendant|avant|après|comme|plus|moins|très|bien|mal|tout|tous|toute|toutes|encore|déjà|jamais|toujours|parfois|souvent|quelquefois|peut|être|avoir|faire|aller|venir|voir|savoir|pouvoir|vouloir|devoir|dire|prendre|donner|mettre|porter|tenir|rester|partir|arriver|sortir|entrer|monter|descendre|passer|tourner|revenir|devenir|mourir|naître|vivre|aimer|détester|préférer|choisir|décider|essayer|réussir|échouer|commencer|finir|continuer|arrêter|oublier|se rappeler|se souvenir|apprendre|enseigner|étudier|travailler|jouer|dormir|manger|boire|acheter|vendre|payer|coûter|valoir|gagner|perdre|chercher|trouver|regarder|écouter|parler|répondre|demander|expliquer|comprendre|connaître|reconnaître|ouvrir|fermer|lire|écrire|compter|calculer|mesurer|peser|couper|casser|réparer|construire|détruire|nettoyer|salir|laver|sécher|cuisiner|servir|goûter|sentir|toucher|caresser|frapper|pousser|tirer|porter|poser|lever|baisser|incliner|pencher|plier|étendre|raccourcir|allonger|élargir|rétrécir|augmenter|diminuer|améliorer|empirer|changer|transformer|remplacer|échanger|comparer|ressembler|différer|égaler|dépasser|suivre|précéder|accompagner|guider|diriger|mener|conduire|emmener|amener|apporter|emporter|envoyer|recevoir|accepter|refuser|offrir|proposer|suggérer|conseiller|recommander|interdire|permettre|autoriser|défendre|protéger|attaquer|se battre|se disputer|se réconcilier|pardonner|excuser|remercier|féliciter|encourager|décourager|rassurer|inquiéter|surprendre|étonner|impressionner|décevoir|satisfaire|contenter|plaire|déplaire|intéresser|ennuyer|amuser|distraire|se reposer|se détendre|se dépêcher|se presser|attendre|patienter|hésiter|douter|croire|penser|réfléchir|se concentrer|se rappeler|imaginer|rêver|espérer|souhaiter|désirer|avoir envie|avoir besoin|avoir peur|avoir honte|être fier|être content|être triste|être en colère|être surpris|être déçu|être satisfait|se sentir|ressentir|éprouver|exprimer|montrer|cacher|révéler|découvrir|inventer|créer|produire|fabriquer|organiser|préparer|planifier|prévoir|programmer|réserver|annuler|confirmer|vérifier|contrôler|surveiller|observer|remarquer|noter|enregistrer|sauvegarder|effacer|supprimer|ajouter|enlever|retirer|garder|conserver|jeter|abandonner|laisser|quitter|partir|s'en aller|revenir|rentrer|retourner|repartir|se diriger|se rendre|aller chercher|ramener|rapporter|rendre|prêter|emprunter|voler|acheter|vendre|louer|posséder|appartenir|contenir|remplir|vider|verser|couler|tomber|chuter|glisser|trébucher|se relever|se lever|s'asseoir|s'allonger|se coucher|s'endormir|se réveiller|se lever|s'habiller|se déshabiller|se laver|se brosser|se peigner|se maquiller|se raser|se parfumer|sortir|rentrer|entrer|monter|descendre|grimper|sauter|courir|marcher|se promener|voyager|visiter|explorer|découvrir|se perdre|se retrouver|demander son chemin|indiquer le chemin|tourner|continuer tout droit|traverser|passer|dépasser|rattraper|rejoindre|rencontrer|voir|apercevoir|reconnaître|saluer|se présenter|faire connaissance|bavarder|discuter|parler|dire|raconter|expliquer|décrire|annoncer|déclarer|affirmer|nier|mentir|avouer|confesser|promettre|jurer|menacer|prévenir|avertir|informer|renseigner|se renseigner|demander|questionner|interroger|répondre|répliquer|objecter|protester|se plaindre|critiquer|féliciter|complimenter|insulter|se moquer|plaisanter|rigoler|rire|sourire|pleurer|sangloter|crier|chuchoter|murmurer|se taire|faire du bruit|faire silence|écouter|entendre|prêter l'oreille|tendre l'oreille|être sourd|être muet|être aveugle|voir|regarder|observer|examiner|surveiller|épier|guetter|apercevoir|distinguer|reconnaître|identifier|deviner|découvrir|révéler|cacher|dissimuler|montrer|présenter|exposer|exhiber|étaler|ranger|déranger|organiser|désorganiser|trier|classer|mélanger|séparer|diviser|partager|distribuer|donner|offrir|recevoir|prendre|saisir|attraper|lâcher|laisser tomber|ramasser|soulever|porter|poser|mettre|placer|installer|enlever|retirer|ôter|habiller|déshabiller|couvrir|découvrir|ouvrir|fermer|verrouiller|déverrouiller|allumer|éteindre|brancher|débrancher|appuyer|pousser|tirer|tourner|visser|dévisser|nouer|dénouer|attacher|détacher|lier|délier|serrer|desserrer|presser|relâcher|tenir|lâcher|garder|abandonner|jeter|lancer|rattraper|renvoyer|retourner|rendre|rapporter|ramener|emporter|emmener|accompagner|suivre|poursuivre|fuir|s'échapper|se sauver|se cacher|se réfugier|protéger|défendre|attaquer|se battre|lutter|résister|céder|abandonner|renoncer|persister|insister|continuer|persévérer|réussir|échouer|gagner|perdre|vaincre|être vaincu|dominer|être dominé|commander|obéir|diriger|suivre|mener|guider|conseiller|suggérer|proposer|recommander|interdire|défendre|permettre|autoriser|accepter|refuser|approuver|désapprouver|être d'accord|être en désaccord|discuter|débattre|se disputer|se quereller|se réconcilier|faire la paix|pardonner|excuser|s'excuser|remercier|féliciter|complimenter|critiquer|blâmer|accuser|défendre|justifier|expliquer|raison|tort|vrai|faux|juste|injuste|bon|mauvais|bien|mal|mieux|pire|meilleur|pire)\b/i.test(cleanText);
+
+        if (!hasFrenchContent) {
+            return {
+                valid: false,
+                error: 'Please select French text only.'
+            };
+        }
+
+        return { valid: true, cleanText };
+    }
+
+    function createFloatingButton() {
+        floatingButton = document.createElement('button');
+        floatingButton.className = 'floating-translate-btn';
+        floatingButton.innerHTML = '🔤 Translate';
+        floatingButton.style.display = 'none';
+        floatingButton.addEventListener('click', handlePhraseTranslation);
+        document.body.appendChild(floatingButton);
+    }
+
+    function showFloatingButton(x, y) {
+        if (!floatingButton) return;
+        
+        floatingButton.style.display = 'block';
+        floatingButton.style.left = Math.min(x, window.innerWidth - 120) + 'px';
+        floatingButton.style.top = Math.max(10, y - 40) + 'px';
+    }
+
+    function hideFloatingButton() {
+        if (floatingButton) {
+            floatingButton.style.display = 'none';
+        }
+        currentSelection = null;
+    }
+
+    function showTooltip(message, x, y) {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'error-tooltip';
+        tooltip.textContent = message;
+        tooltip.style.left = Math.min(x, window.innerWidth - 200) + 'px';
+        tooltip.style.top = Math.max(10, y - 30) + 'px';
+        document.body.appendChild(tooltip);
+        
+        setTimeout(() => {
+            if (tooltip.parentNode) {
+                tooltip.parentNode.removeChild(tooltip);
+            }
+        }, 3000);
+    }
+
+    function handlePhraseTranslation() {
+        if (!currentSelection) return;
+
+        hideFloatingButton();
+        window.getSelection().removeAllRanges();
+        
+        showSidebar();
+        displayLoadingState('phrase');
+        
+        fetchDefinition(currentSelection.text, true)
+            .then(data => {
+                displayPhraseTranslation(data);
+            })
+            .catch(error => {
+                displayError('Failed to translate phrase: ' + error.message);
+            });
+    }
+
+    function handleWordClick(e) {
+        // Don't handle word clicks if there's an active selection
+        if (currentSelection) return;
+
+        if (e.target.classList.contains('word')) {
+            const word = e.target.getAttribute('data-word');
+            if (word && word !== lastSelectedWord) {
+                lastSelectedWord = word;
+                showSidebar();
+                displayLoadingState('word');
+                
+                fetchDefinition(word, false)
+                    .then(data => {
+                        displayWordDefinition(data);
+                    })
+                    .catch(error => {
+                        displayError('Failed to fetch definition: ' + error.message);
                     });
-                }).catch(err => {
-                    console.error("Error loading PDF:", err);
-                    readingPane.innerHTML = `<p class="text-red-500 text-center">Error: Could not read the PDF file.</p>`;
+            }
+        }
+    }
+
+    function handleDocumentClick(e) {
+        // Don't hide if clicking on the floating button or sidebar
+        if (e.target === floatingButton || 
+            e.target.closest('#sidebar') || 
+            e.target.closest('.floating-translate-btn')) {
+            return;
+        }
+        
+        // Hide floating button if clicking elsewhere
+        if (floatingButton && floatingButton.style.display === 'block') {
+            hideFloatingButton();
+        }
+    }
+
+    function showSidebar() {
+        sidebar.classList.add('open');
+    }
+
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        hideFloatingButton();
+    }
+
+    function displayLoadingState(type) {
+        const content = sidebar.querySelector('.content');
+        content.innerHTML = `
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Fetching ${type === 'phrase' ? 'translation' : 'definition'}...</p>
+            </div>
+        `;
+    }
+
+    function displayWordDefinition(data) {
+        const content = sidebar.querySelector('.content');
+        
+        if (data.type === 'definition') {
+            let html = `
+                <div class="word-header">
+                    <h2>${data.word}</h2>
+                    ${data.pronunciation ? `<div class="pronunciation">${data.pronunciation}</div>` : ''}
+                </div>
+            `;
+            
+            if (data.definitions && data.definitions.length > 0) {
+                html += '<div class="definitions">';
+                data.definitions.forEach((def, index) => {
+                    html += `
+                        <div class="definition-item">
+                            <span class="part-of-speech">${def.partOfSpeech}</span>
+                            <p>${def.definition}</p>
+                            ${def.example ? `<div class="example">"${def.example}"</div>` : ''}
+                        </div>
+                    `;
                 });
-            };
-            reader.readAsArrayBuffer(file);
-        } else if (fileExtension === 'docx') {
-            reader.onload = (event) => {
-                mammoth.extractRawText({ arrayBuffer: event.target.result })
-                    .then(result => loadTextWithFormatting(result.value))
-                    .catch(err => {
-                        console.error("Error reading .docx file:", err);
-                        readingPane.innerHTML = `<p class="text-red-500 text-center">Error: Could not read the .docx file.</p>`;
-                    });
-            };
-            reader.readAsArrayBuffer(file);
+                html += '</div>';
+            }
+            
+            content.innerHTML = html;
         } else {
-            readingPane.innerHTML = `<p class="text-red-500 text-center">Error: Unsupported file type. Please upload a .txt, .pdf, or .docx file.</p>`;
+            displayError('Unexpected response format for word definition.');
         }
-    });
+    }
 
-    // Add keyboard shortcut for paste (Ctrl+V or Cmd+V)
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.target.matches('input, textarea')) {
-            e.preventDefault();
-            showPasteModal();
+    function displayPhraseTranslation(data) {
+        const content = sidebar.querySelector('.content');
+        
+        if (data.type === 'translation') {
+            let html = `
+                <div class="phrase-header">
+                    <h2 class="phrase-title">Phrase Translation</h2>
+                    <div class="original-phrase">"${data.phrase}"</div>
+                </div>
+                <div class="main-translation">
+                    <h3>Translation</h3>
+                    <p class="translation-text">${data.translation}</p>
+                </div>
+            `;
+            
+            if (data.context) {
+                html += `
+                    <div class="context-info">
+                        <h3>Context</h3>
+                        <p>${data.context}</p>
+                    </div>
+                `;
+            }
+            
+            if (data.breakdown && data.breakdown.length > 0) {
+                html += '<div class="word-breakdown">';
+                html += '<h3>Word Breakdown</h3>';
+                html += '<div class="breakdown-grid">';
+                data.breakdown.forEach(item => {
+                    html += `
+                        <div class="breakdown-item">
+                            <span class="original-word">${item.word}</span>
+                            <span class="word-meaning">${item.meaning}</span>
+                        </div>
+                    `;
+                });
+                html += '</div></div>';
+            }
+            
+            content.innerHTML = html;
+        } else {
+            displayError('Unexpected response format for phrase translation.');
         }
-    });
+    }
 
-    // Add click handler for paste button (we'll add this to the HTML)
-    document.addEventListener('click', (e) => {
-        if (e.target.id === 'paste-text-btn') {
-            showPasteModal();
+    function displayError(message) {
+        const content = sidebar.querySelector('.content');
+        content.innerHTML = `
+            <div class="error">
+                <h3>Error</h3>
+                <p>${message}</p>
+            </div>
+        `;
+    }
+
+    async function fetchDefinition(text, isPhrase = false) {
+        const response = await fetch('/fetch-definition', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                text: text,
+                isPhrase: isPhrase 
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-    });
+        
+        return response.json();
+    }
 });
