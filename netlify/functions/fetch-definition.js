@@ -247,7 +247,7 @@ async function getPhraseTranslation(phrase) {
   try {
     console.log('🌍 Translating with LibreTranslate:', cleaned);
 
-    const response = await makeRequest('https://libretranslate.de/translate', {
+    const response = await makeRequest('https://translate.argosopentech.com/translate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
