@@ -99,33 +99,42 @@ const fallbackDictionary = [
 function makeRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https:') ? https : http;
-    
+
     const req = protocol.request(url, { ...options, method: options.method || 'GET' }, (res) => {
       let data = '';
-      res.on('data', chunk => { data += chunk; });
-      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+
       res.on('end', () => {
-        if (res.statusCode === 429) {
-          return reject(new Error('Too many requests - rate limited'));
-        }
-        if (res.statusCode === 400 && data.includes('detected automation')) {
-          return reject(new Error('Blocked by service'));
+        // Handle non-200 status
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 100)}`));
         }
 
+        // Detect HTML (anti-bot response)
+        if (data.trim().startsWith('<!DOCTYPE') || data.includes('<html') || data.includes('grecaptcha')) {
+          return reject(new Error('Blocked by service (HTML response)'));
+        }
+
+        // Try to parse JSON
         try {
           const parsed = JSON.parse(data);
           resolve(parsed);
         } catch (err) {
-          resolve({ rawData: data });
+          reject(new Error('Invalid JSON response from translation service'));
         }
       });
     });
 
-    req.on('error', reject);
+    req.on('error', (error) => {
+      reject(error);
+    });
 
+    // ⏱ Reduce timeout to 5s (was 5000ms)
     req.setTimeout(5000, () => {
       req.destroy();
-      reject(new Error('Request timeout'));
+      reject(new Error('Translation request timed out'));
     });
 
     if (options.body) {
@@ -237,7 +246,7 @@ async function getPhraseTranslation(phrase) {
   if (translationCache.has(cleaned)) {
     const { data, timestamp } = translationCache.get(cleaned);
     if (now - timestamp < CACHE_TTL) {
-      console.log('✅ Cache hit for phrase:', cleaned);
+      console.log('✅ Cache hit:', cleaned);
       return data;
     } else {
       translationCache.delete(cleaned);
@@ -245,8 +254,6 @@ async function getPhraseTranslation(phrase) {
   }
 
   try {
-    console.log('🌍 Translating with LibreTranslate:', cleaned);
-
     const response = await makeRequest('https://translate.argosopentech.com/translate', {
       method: 'POST',
       headers: {
@@ -260,55 +267,46 @@ async function getPhraseTranslation(phrase) {
     });
 
     if (response && response.translatedText) {
-      const translation = response.translatedText;
-
-      // Build word-by-word breakdown
+      // Build breakdown
       const words = cleaned.split(/\s+/);
-      const breakdown = await Promise.all(words.map(async (word) => {
-        const cleanWord = cleanText(word);
-        if (!cleanWord) return { word: '', meaning: '' };
-
-        try {
-          const wordResponse = await makeRequest('https://libretranslate.de/translate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              q: cleanWord,
-              source: 'fr',
-              target: 'en'
-            })
-          });
-          return {
-            word: cleanWord,
-            meaning: wordResponse.translatedText || cleanWord
-          };
-        } catch {
-          return { word: cleanWord, meaning: '(unavailable)' };
-        }
-      }));
+      const breakdown = await Promise.all(
+        words.map(async (word) => {
+          const cleanWord = cleanText(word);
+          if (!cleanWord) return { word: '', meaning: '' };
+          try {
+            const wordRes = await makeRequest('https://translate.argosopentech.com/translate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ q: cleanWord, source: 'fr', target: 'en' })
+            });
+            return {
+              word: cleanWord,
+              meaning: wordRes.translatedText || cleanWord
+            };
+          } catch {
+            return { word: cleanWord, meaning: '(unavailable)' };
+          }
+        })
+      );
 
       const result = {
         phrase: cleaned,
-        translation: translation,
-        context: determineContext(cleaned, translation),
-        breakdown: breakdown,
+        translation: response.translatedText,
+        context: determineContext(cleaned, response.translatedText),
+        breakdown,
         source: 'libretranslate'
       };
 
-      // Cache the result
-      translationCache.set(cleaned, {
-        data: result,
-        timestamp: now
-      });
-
+      translationCache.set(cleaned, { data: result, timestamp: now });
       return result;
     }
   } catch (error) {
-    console.error('LibreTranslate API failed:', error.message);
-    // Fallback to dictionary
+    console.error('Phrase translation failed:', error.message);
+    // ✅ Always return fallback
     return getFallbackPhraseTranslation(cleaned);
   }
 
+  // ✅ Fallback if no response
   return getFallbackPhraseTranslation(cleaned);
 }
 

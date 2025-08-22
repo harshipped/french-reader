@@ -129,7 +129,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (file) {
             handleFile(file);
         }
-    }
+        
+        // ✅ Reset input so same file can be re-uploaded
+        e.target.value = '';
+}
 
     function handleFile(file) {
         const validTypes = ['text/plain', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
