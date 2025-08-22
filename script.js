@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sidebar');
 
     // File upload functionality
+    const uploadFileBtn = document.getElementById('upload-file-btn');
     uploadFileBtn.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', handleFileSelect);
 
