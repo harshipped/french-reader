@@ -10,8 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sidebar');
 
     // File upload functionality
-    const fileUploadLabel = document.querySelector('label[for="file-upload"]');
-    fileUploadLabel.addEventListener('click', () => fileInput.click());
+    uploadFileBtn.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', handleFileSelect);
 
     // FIXED: Add paste button functionality
@@ -431,60 +430,66 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function displayPhraseTranslation(data) {
-        const toolPlaceholder = document.getElementById('tool-placeholder');
-        const loaderPlaceholder = document.getElementById('loader-placeholder');
-        const wordDetails = document.getElementById('word-details');
+    const toolPlaceholder = document.getElementById('tool-placeholder');
+    const loaderPlaceholder = document.getElementById('loader-placeholder');
+    const wordDetails = document.getElementById('word-details');
 
-        toolPlaceholder?.classList.add('hidden');
-        loaderPlaceholder?.classList.add('hidden');
-        wordDetails?.classList.remove('hidden');
-        
-        if (data.type === 'translation') {
-            document.getElementById('selected-word').textContent = `"${data.phrase}"`;
-            document.getElementById('word-phonetic').textContent = data.translation;
-            document.getElementById('content-type-indicator').textContent = 'PHRASE';
-            
-            const definitionsContainer = document.getElementById('definitions-container');
-            definitionsContainer.innerHTML = '';
-            
-            // Main translation block
-            const translationBlock = document.createElement('div');
-            translationBlock.className = 'bg-white p-4 rounded-lg border border-slate-200';
-            translationBlock.innerHTML = `
-                <div class="flex items-center gap-2 mb-2">
-                    <span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded">Translation</span>
-                    ${data.context ? `<span class="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded">${data.context}</span>` : ''}
-                </div>
-                <p class="text-slate-700 font-medium text-lg">${data.translation}</p>
-            `;
-            definitionsContainer.appendChild(translationBlock);
-            
-            // Show phrase breakdown if available
-            if (data.breakdown && data.breakdown.length > 0) {
-                const phraseBreakdown = document.getElementById('phrase-breakdown');
-                const breakdownContainer = document.getElementById('breakdown-container');
-                
-                breakdownContainer.innerHTML = '';
-                data.breakdown.forEach(item => {
-                    const breakdownItem = document.createElement('div');
-                    breakdownItem.className = 'flex justify-between items-center py-2 px-3 bg-slate-50 rounded text-sm';
-                    breakdownItem.innerHTML = `
-                        <span class="font-medium text-slate-700">${item.word}</span>
-                        <span class="text-slate-600">${item.meaning}</span>
-                    `;
-                    breakdownContainer.appendChild(breakdownItem);
-                });
-                
-                phraseBreakdown.classList.remove('hidden');
-            } else {
-                document.getElementById('phrase-breakdown').classList.add('hidden');
-            }
-            
-            wordDetails.classList.remove('hidden');
+    toolPlaceholder?.classList.add('hidden');
+    loaderPlaceholder?.classList.add('hidden');
+    wordDetails?.classList.remove('hidden');
+
+    if (data.type === 'translation') {
+        // Show main translation
+        document.getElementById('selected-word').textContent = `"${data.phrase}"`;
+        document.getElementById('word-phonetic').textContent = data.translation;
+        document.getElementById('content-type-indicator').textContent = 'PHRASE';
+
+        const definitionsContainer = document.getElementById('definitions-container');
+        definitionsContainer.innerHTML = '';
+
+        // Main translation block
+        const translationBlock = document.createElement('div');
+        translationBlock.className = 'bg-white p-4 rounded-lg border border-slate-200';
+        translationBlock.innerHTML = `
+            <div class="flex items-center gap-2 mb-2">
+                <span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded">Translation</span>
+                ${data.context ? `<span class="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded">${data.context}</span>` : ''}
+            </div>
+            <p class="text-slate-700 font-medium text-lg">${data.translation}</p>
+        `;
+        definitionsContainer.appendChild(translationBlock);
+
+        // Handle phrase breakdown
+        const phraseBreakdown = document.getElementById('phrase-breakdown');
+        const breakdownContainer = document.getElementById('breakdown-container');
+
+        if (data.breakdown && data.breakdown.length > 0) {
+            // ✅ Show breakdown if available
+            breakdownContainer.innerHTML = '';
+            data.breakdown.forEach(item => {
+                const breakdownItem = document.createElement('div');
+                breakdownItem.className = 'flex justify-between items-center py-2 px-3 bg-slate-50 rounded text-sm';
+                breakdownItem.innerHTML = `
+                    <span class="font-medium text-slate-700">${item.word}</span>
+                    <span class="text-slate-600">${item.meaning}</span>
+                `;
+                breakdownContainer.appendChild(breakdownItem);
+            });
+            phraseBreakdown.classList.remove('hidden');
         } else {
-            displayError('Unexpected response format for phrase translation.');
+            // 🚀 Show placeholder instead of hiding
+            breakdownContainer.innerHTML = `
+                <div class="text-slate-400 italic text-sm">Breakdown loading…</div>
+            `;
+            phraseBreakdown.classList.remove('hidden');
         }
+
+        wordDetails.classList.remove('hidden');
+    } else {
+        displayError('Unexpected response format for phrase translation.');
     }
+}
+
 
     function displayError(message) {
         const toolPlaceholder = document.getElementById('tool-placeholder');

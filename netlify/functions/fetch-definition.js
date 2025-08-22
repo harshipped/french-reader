@@ -242,73 +242,76 @@ async function getPhraseTranslation(phrase) {
   const cleaned = cleanText(phrase).toLowerCase();
   const now = Date.now();
 
-  // Check cache
+  // ✅ Check cache
   if (translationCache.has(cleaned)) {
     const { data, timestamp } = translationCache.get(cleaned);
-    if (now - timestamp < CACHE_TTL) {
-      console.log('✅ Cache hit:', cleaned);
-      return data;
-    } else {
-      translationCache.delete(cleaned);
-    }
+    if (now - timestamp < CACHE_TTL) return data;
+    translationCache.delete(cleaned);
   }
 
   try {
+    // Step 1: Translate the whole phrase
     const response = await makeRequest('https://translate.argosopentech.com/translate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        q: cleaned,
-        source: 'fr',
-        target: 'en'
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: cleaned, source: 'fr', target: 'en' })
     });
 
-    if (response && response.translatedText) {
-      // Build breakdown
-      const words = cleaned.split(/\s+/);
-      const breakdown = await Promise.all(
-        words.map(async (word) => {
-          const cleanWord = cleanText(word);
-          if (!cleanWord) return { word: '', meaning: '' };
-          try {
-            const wordRes = await makeRequest('https://translate.argosopentech.com/translate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ q: cleanWord, source: 'fr', target: 'en' })
-            });
-            return {
-              word: cleanWord,
-              meaning: wordRes.translatedText || cleanWord
-            };
-          } catch {
-            return { word: cleanWord, meaning: '(unavailable)' };
-          }
-        })
-      );
-
-      const result = {
-        phrase: cleaned,
-        translation: response.translatedText,
-        context: determineContext(cleaned, response.translatedText),
-        breakdown,
-        source: 'libretranslate'
-      };
-
-      translationCache.set(cleaned, { data: result, timestamp: now });
-      return result;
+    if (!response || !response.translatedText) {
+      throw new Error('No translation received');
     }
+
+    // ✅ Build base result immediately
+    const result = {
+      phrase: cleaned,
+      translation: response.translatedText,
+      context: determineContext(cleaned, response.translatedText),
+      breakdown: [], // start empty
+      source: 'libretranslate'
+    };
+
+    // Save to cache
+    translationCache.set(cleaned, { data: result, timestamp: now });
+
+    // Step 2 (async): Enrich with breakdown in the background
+    enrichWithBreakdown(result).catch(err =>
+      console.error('Breakdown enrichment failed:', err.message)
+    );
+
+    return result; // 🚀 respond immediately with main translation
+
   } catch (error) {
     console.error('Phrase translation failed:', error.message);
-    // ✅ Always return fallback
     return getFallbackPhraseTranslation(cleaned);
   }
-
-  // ✅ Fallback if no response
-  return getFallbackPhraseTranslation(cleaned);
 }
+
+async function enrichWithBreakdown(result) {
+  const words = result.phrase.split(/\s+/);
+
+  const breakdown = await Promise.all(
+    words.map(async (word) => {
+      const cleanWord = cleanText(word);
+      if (!cleanWord) return { word: '', meaning: '' };
+
+      try {
+        const wordRes = await makeRequest('https://translate.argosopentech.com/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: cleanWord, source: 'fr', target: 'en' })
+        });
+        return { word: cleanWord, meaning: wordRes.translatedText || cleanWord };
+      } catch {
+        return { word: cleanWord, meaning: '(unavailable)' };
+      }
+    })
+  );
+
+  // Update cache with breakdown
+  result.breakdown = breakdown;
+  translationCache.set(result.phrase, { data: result, timestamp: Date.now() });
+}
+
 
 function getFallbackPhraseTranslation(phrase) {
   console.log('🔁 Using fallback dictionary for:', phrase);
