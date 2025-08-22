@@ -242,86 +242,46 @@ async function getWordDefinitionFromAPI(word) {
 // const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 async function getPhraseTranslation(phrase) {
-  const cleaned = cleanText(phrase).toLowerCase();
-  const now = Date.now();
-
-  // ✅ Check cache
-  if (translationCache.has(cleaned)) {
-    const { data, timestamp } = translationCache.get(cleaned);
-    if (now - timestamp < CACHE_TTL) return data;
-    translationCache.delete(cleaned);
-  }
+  const cleaned = phrase.trim();
+  const url = `https://translate.argosopentech.com/translate`;
 
   try {
-    // Step 1: Translate the whole phrase
-    const response = await makeRequest('https://translate.argosopentech.com/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: cleaned, source: 'fr', target: 'en' })
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        q: cleaned,
+        source: "fr",
+        target: "en",
+        format: "text"
+      })
     });
 
-    if (!response || !response.translatedText) {
-      throw new Error('No translation received');
-    }
+    if (!response.ok) throw new Error(`Translation API error: ${response.status}`);
+    const data = await response.json();
 
-    // ✅ Build base result immediately
-    const result = {
+    return {
+      type: "translation",
       phrase: cleaned,
-      translation: response.translatedText,
-      context: determineContext(cleaned, response.translatedText),
-      breakdown: [], // start empty
-      source: 'libretranslate'
+      translation: data.translatedText || "[No translation found]",
+      context: "",
+      breakdown: [],   // ✅ Always empty now
+      source: "argos"
     };
 
-    // Save to cache
-    translationCache.set(cleaned, { data: result, timestamp: now });
-
-    // Step 2 (async): Enrich with breakdown in the background
-    enrichWithBreakdown(result).catch(err =>
-      console.error('Breakdown enrichment failed:', err.message)
-    );
-
-    return result; // 🚀 respond immediately with main translation
-  
   } catch (error) {
-  console.error('Phrase translation failed:', error.message);
+    console.error("Phrase translation failed:", error.message);
 
-  // ✅ Always return a valid translation object so the frontend can stop loading
-  return {
-    type: 'translation',
-    phrase: cleaned,
-    translation: '[Translation unavailable]',
-    context: '',
-    breakdown: [],
-    source: 'fallback'
-  };
-}
-}
-
-async function enrichWithBreakdown(result) {
-  const words = result.phrase.split(/\s+/);
-
-  const breakdown = await Promise.all(
-    words.map(async (word) => {
-      const cleanWord = cleanText(word);
-      if (!cleanWord) return { word: '', meaning: '' };
-
-      try {
-        const wordRes = await makeRequest('https://translate.argosopentech.com/translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: cleanWord, source: 'fr', target: 'en' })
-        });
-        return { word: cleanWord, meaning: wordRes.translatedText || cleanWord };
-      } catch {
-        return { word: cleanWord, meaning: '(unavailable)' };
-      }
-    })
-  );
-
-  // Update cache with breakdown
-  result.breakdown = breakdown;
-  translationCache.set(result.phrase, { data: result, timestamp: Date.now() });
+    // ✅ Always return a fallback object so frontend spinner stops
+    return {
+      type: "translation",
+      phrase: cleaned,
+      translation: "[Translation unavailable]",
+      context: "",
+      breakdown: [],
+      source: "fallback"
+    };
+  }
 }
 
 

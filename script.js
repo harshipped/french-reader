@@ -437,8 +437,7 @@ function displayWordDefinition(data) {
     }
 }
 
-
-    function displayPhraseTranslation(data) {
+function displayPhraseTranslation(data) {
     const toolPlaceholder = document.getElementById('tool-placeholder');
     const loaderPlaceholder = document.getElementById('loader-placeholder');
     const wordDetails = document.getElementById('word-details');
@@ -450,7 +449,7 @@ function displayWordDefinition(data) {
     if (data.type === 'translation') {
         // Show main translation
         document.getElementById('selected-word').textContent = `"${data.phrase}"`;
-        document.getElementById('word-phonetic').textContent = data.translation;
+        document.getElementById('word-phonetic').textContent = ''; // no IPA for phrases
         document.getElementById('content-type-indicator').textContent = 'PHRASE';
 
         const definitionsContainer = document.getElementById('definitions-container');
@@ -468,36 +467,15 @@ function displayWordDefinition(data) {
         `;
         definitionsContainer.appendChild(translationBlock);
 
-        // Handle phrase breakdown
-        const phraseBreakdown = document.getElementById('phrase-breakdown');
-        const breakdownContainer = document.getElementById('breakdown-container');
-
-        if (data.breakdown && data.breakdown.length > 0) {
-            // ✅ Show breakdown if available
-            breakdownContainer.innerHTML = '';
-            data.breakdown.forEach(item => {
-                const breakdownItem = document.createElement('div');
-                breakdownItem.className = 'flex justify-between items-center py-2 px-3 bg-slate-50 rounded text-sm';
-                breakdownItem.innerHTML = `
-                    <span class="font-medium text-slate-700">${item.word}</span>
-                    <span class="text-slate-600">${item.meaning}</span>
-                `;
-                breakdownContainer.appendChild(breakdownItem);
-            });
-            phraseBreakdown.classList.remove('hidden');
-        } else {
-            // 🚀 Show placeholder instead of hiding
-            breakdownContainer.innerHTML = `
-                <div class="text-slate-400 italic text-sm">Breakdown loading…</div>
-            `;
-            phraseBreakdown.classList.remove('hidden');
-        }
+        // Hide breakdown completely since we don't use it anymore
+        document.getElementById('phrase-breakdown').classList.add('hidden');
 
         wordDetails.classList.remove('hidden');
     } else {
         displayError('Unexpected response format for phrase translation.');
     }
 }
+
 
 
     function displayError(message) {
