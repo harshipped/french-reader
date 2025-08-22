@@ -279,11 +279,20 @@ async function getPhraseTranslation(phrase) {
     );
 
     return result; // 🚀 respond immediately with main translation
-
+  
   } catch (error) {
-    console.error('Phrase translation failed:', error.message);
-    return getFallbackPhraseTranslation(cleaned);
-  }
+  console.error('Phrase translation failed:', error.message);
+
+  // ✅ Always return a valid translation object so the frontend can stop loading
+  return {
+    type: 'translation',
+    phrase: cleaned,
+    translation: '[Translation unavailable]',
+    context: '',
+    breakdown: [],
+    source: 'fallback'
+  };
+}
 }
 
 async function enrichWithBreakdown(result) {
