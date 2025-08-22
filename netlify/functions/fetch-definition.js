@@ -166,6 +166,7 @@ function cleanText(text) {
 }
 
 // Get word definition from various APIs
+// Get word definition from various APIs
 async function getWordDefinitionFromAPI(word) {
   try {
     // Try multiple French dictionary APIs in sequence
@@ -175,7 +176,7 @@ async function getWordDefinitionFromAPI(word) {
         name: 'dictionary',
         url: `https://api.dictionaryapi.dev/api/v2/entries/fr/${encodeURIComponent(word)}`
       },
-      // Alternative: Use Google Translate for basic definition
+      // Alternative: Use Google Translate for basic fallback
       {
         name: 'translate',
         url: `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&q=${encodeURIComponent(word)}`
@@ -196,13 +197,11 @@ async function getWordDefinitionFromAPI(word) {
             phonetic: entry.phonetic || entry.phonetics?.[0]?.text || '',
             audio: entry.phonetics?.find(p => p.audio)?.audio || null,
             definitions: meanings.flatMap(meaning =>
-  (meaning.definitions || []).map(def => ({
-    partOfSpeech: meaning.partOfSpeech || 'unknown',
-    definition: def.definition || 'Definition available',
-    example: def.example || null
-  }))
-),
-
+              (meaning.definitions || []).map(def => ({
+                partOfSpeech: meaning.partOfSpeech || 'unknown',
+                definition: def.definition || 'Definition available'
+              }))
+            ),
             source: 'dictionary'
           };
         }
@@ -215,8 +214,7 @@ async function getWordDefinitionFromAPI(word) {
             audio: null,
             definitions: [{
               partOfSpeech: 'unknown',
-              definition: translation,
-              example: `Exemple: "${word}" dans une phrase.`
+              definition: translation
             }],
             source: 'translate'
           };
@@ -234,8 +232,6 @@ async function getWordDefinitionFromAPI(word) {
     return null;
   }
 }
-
-
 
 // In-memory cache for translations
 // const translationCache = new Map();

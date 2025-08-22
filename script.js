@@ -418,7 +418,6 @@ function displayWordDefinition(data) {
                         <span class="text-slate-400 text-xs">#${index + 1}</span>
                     </div>
                     <p class="text-slate-700 mb-2">${def.definition}</p>
-                    ${def.example ? `<div class="text-slate-500 italic text-sm">"${def.example}"</div>` : ''}
                 `;
                 definitionsContainer.appendChild(definitionBlock);
             });
@@ -436,6 +435,7 @@ function displayWordDefinition(data) {
         displayError('Unexpected response format for word definition.');
     }
 }
+
 
 function displayPhraseTranslation(data) {
     const toolPlaceholder = document.getElementById('tool-placeholder');
