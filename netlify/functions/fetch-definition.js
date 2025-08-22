@@ -166,17 +166,19 @@ function cleanText(text) {
 }
 
 // Get word definition from various APIs
-// Get word definition from various APIs
+// Get word definition from multiple APIs (dictionary → glosbe → translate)
 async function getWordDefinitionFromAPI(word) {
   try {
-    // Try multiple French dictionary APIs in sequence
+    // API sequence: dictionaryapi.dev → Glosbe → Google Translate
     const apis = [
-      // Free Dictionary API (supports French)
       {
         name: 'dictionary',
         url: `https://api.dictionaryapi.dev/api/v2/entries/fr/${encodeURIComponent(word)}`
       },
-      // Alternative: Use Google Translate for basic fallback
+      {
+        name: 'glosbe',
+        url: `https://glosbe.com/gapi/translate?from=fr&dest=en&format=json&phrase=${encodeURIComponent(word)}`
+      },
       {
         name: 'translate',
         url: `https://translate.googleapis.com/translate_a/single?client=gtx&sl=fr&tl=en&dt=t&q=${encodeURIComponent(word)}`
@@ -185,14 +187,16 @@ async function getWordDefinitionFromAPI(word) {
 
     for (const api of apis) {
       try {
-        console.log(`Trying ${api.name} API for word: ${word}`);
+        console.log(`🔎 Trying ${api.name} API for word: ${word}`);
         const result = await makeRequest(api.url);
-        
+
+        // --- Dictionary API ---
         if (api.name === 'dictionary' && result && Array.isArray(result) && result[0]) {
           const entry = result[0];
           const meanings = entry.meanings || [];
-          
+
           return {
+            type: 'definition',
             word: entry.word || word,
             phonetic: entry.phonetic || entry.phonetics?.[0]?.text || '',
             audio: entry.phonetics?.find(p => p.audio)?.audio || null,
@@ -205,33 +209,57 @@ async function getWordDefinitionFromAPI(word) {
             source: 'dictionary'
           };
         }
-        
+
+        // --- Glosbe API ---
+        if (api.name === 'glosbe' && result && Array.isArray(result.tuc)) {
+          const definitions = result.tuc
+            .filter(item => item.phrase && item.phrase.text)
+            .map(item => ({
+              partOfSpeech: 'translation',
+              definition: item.phrase.text
+            }));
+
+          if (definitions.length > 0) {
+            return {
+              type: 'definition',
+              word: word,
+              phonetic: '',
+              audio: null,
+              definitions,
+              source: 'glosbe'
+            };
+          }
+        }
+
+        // --- Google Translate ---
         if (api.name === 'translate' && result && Array.isArray(result) && result[0]?.[0]?.[0]) {
           const translation = result[0][0][0];
           return {
+            type: 'definition',
             word: word,
             phonetic: '',
             audio: null,
             definitions: [{
-              partOfSpeech: 'unknown',
+              partOfSpeech: 'translation',
               definition: translation
             }],
             source: 'translate'
           };
         }
-        
+
       } catch (apiError) {
-        console.log(`${api.name} API failed:`, apiError.message);
-        continue;
+        console.warn(`${api.name} API failed:`, apiError.message);
+        continue; // Try next API
       }
     }
 
-    return null;
+    return null; // Nothing worked
   } catch (error) {
-    console.error('All word definition APIs failed:', error);
+    console.error('❌ All word definition APIs failed:', error);
     return null;
   }
 }
+
 
 // In-memory cache for translations
 // const translationCache = new Map();
