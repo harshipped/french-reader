@@ -181,8 +181,8 @@ async function getWordDefinitionFromAPI(word) {
         options: {
           method: "POST",
           headers: {
-            "Ocp-Apim-Subscription-Key": "YOUR_AZURE_KEY",
-            "Ocp-Apim-Subscription-Region": "YOUR_REGION", // e.g., westeurope
+            "Ocp-Apim-Subscription-Key": process.env.AZURE_TRANSLATOR_KEY,
+            "Ocp-Apim-Subscription-Region": process.env.AZURE_TRANSLATOR_REGION, // e.g., westeurope
             "Content-Type": "application/json"
           },
           body: JSON.stringify([{ Text: word }])
@@ -300,36 +300,32 @@ async function getWordDefinitionFromAPI(word) {
 
 async function getPhraseTranslation(phrase) {
   const cleaned = phrase.trim();
-  const url = `https://translate.argosopentech.com/translate`;
+  const url = `${process.env.URL || ''}/.netlify/functions/translate`;
 
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        q: cleaned,
-        source: "fr",
-        target: "en",
-        format: "text"
-      })
+      body: JSON.stringify({ text: cleaned, from: "fr", to: "en" })
     });
 
-    if (!response.ok) throw new Error(`Translation API error: ${response.status}`);
+    if (!response.ok) throw new Error(`Azure translation API error: ${response.status}`);
     const data = await response.json();
+
+    // Azure returns an array of translations
+    const translation = data[0]?.translations?.[0]?.text || "[No translation found]";
 
     return {
       type: "translation",
       phrase: cleaned,
-      translation: data.translatedText || "[No translation found]",
+      translation: translation,
       context: "",
-      breakdown: [],   // ✅ Always empty now
-      source: "argos"
+      breakdown: [],
+      source: "azure"
     };
 
   } catch (error) {
     console.error("Phrase translation failed:", error.message);
-
-    // ✅ Always return a fallback object so frontend spinner stops
     return {
       type: "translation",
       phrase: cleaned,
@@ -340,6 +336,7 @@ async function getPhraseTranslation(phrase) {
     };
   }
 }
+
 
 
 function getFallbackPhraseTranslation(phrase) {
